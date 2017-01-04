@@ -6,6 +6,7 @@
 # Folders
 _obj
 _test
+output
 
 # Architecture specific extensions/prefixes
 *.[568vq]
@@ -18,7 +19,10 @@ _cgo_gotypes.go
 _cgo_export.*
 
 _testmain.go
+.DS_Store
 
 *.exe
 *.test
 *.prof
+test.mov
+test_vert.mov
