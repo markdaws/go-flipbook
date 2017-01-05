@@ -38,7 +38,10 @@ func VideoFilter(input, output string, fps int, verLog *log.Logger) error {
 	verLog.Println("Writing frames to:", output)
 	verLog.Println("fps=", fps)
 
-	cmd := exec.Command("ffmpeg", "-i", input, "-vf", "fps="+strconv.Itoa(fps), path.Join(output, "img%03d.png"))
+	//TODO: pass this in
+	var maxFrames = 5 * fps
+	cmd := exec.Command("ffmpeg", "-i", input, "-vframes", strconv.Itoa(maxFrames), "-start_number", "0",
+		"-vf", "fps="+strconv.Itoa(fps), path.Join(output, "img%03d.png"))
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
