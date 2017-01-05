@@ -13,7 +13,7 @@ import (
 
 // VideoFilter extracts individual frames from a video source and saves them as
 // images to the specified output location
-func VideoFilter(input, output string, fps int, verLog *log.Logger) error {
+func VideoFilter(input, output, identifier string, fps, maxLength int, verLog *log.Logger) error {
 	if fps < 15 || fps > 60 {
 		return fmt.Errorf("fps must be between 15 and 60, %d invalid value", fps)
 	}
@@ -38,10 +38,9 @@ func VideoFilter(input, output string, fps int, verLog *log.Logger) error {
 	verLog.Println("Writing frames to:", output)
 	verLog.Println("fps=", fps)
 
-	//TODO: pass this in
-	var maxFrames = 5 * fps
+	var maxFrames = maxLength * fps
 	cmd := exec.Command("ffmpeg", "-i", input, "-vframes", strconv.Itoa(maxFrames), "-start_number", "0",
-		"-vf", "fps="+strconv.Itoa(fps), path.Join(output, "img%03d.png"))
+		"-vf", "fps="+strconv.Itoa(fps), path.Join(output, "frame-"+identifier+"-%03d.png"))
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout

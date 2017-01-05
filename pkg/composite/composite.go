@@ -99,7 +99,7 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string, verLog *log.Logger
 			}
 		}
 
-		err = writeJPG(compImg, outputDir, compIndex, verLog)
+		err = writeJPG(compImg, outputDir, identifier, compIndex, verLog)
 		if err != nil {
 			return err
 		}
@@ -149,8 +149,8 @@ func compFrame(
 	return nil
 }
 
-func writeJPG(compImg *image.RGBA, outputDir string, imgIndex int, verLog *log.Logger) error {
-	toImgPath := path.Join(outputDir, fmt.Sprintf("comp%03d.jpg", imgIndex))
+func writeJPG(compImg *image.RGBA, outputDir, identifier string, imgIndex int, verLog *log.Logger) error {
+	toImgPath := path.Join(outputDir, fmt.Sprintf("comp-%s-%03d.jpg", identifier, imgIndex))
 	toImg, err := os.Create(toImgPath)
 	if err != nil {
 		return fmt.Errorf("failed to create image: %s, %s", toImgPath, err)

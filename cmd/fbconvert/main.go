@@ -24,6 +24,7 @@ func main() {
 	clean := flag.Bool("clean", false, "If true, all files in the output directory are deleted before generating new items")
 	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black, defaults to white")
 	skipVideo := flag.Bool("skip", false, "If true frames are not extracted and the input option is not required, defaults to false")
+	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds, defaults to 5")
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
 
 	flag.Parse()
@@ -94,7 +95,7 @@ func main() {
 
 	if !*skipVideo {
 		// Generate all the stills from the input
-		err := ffmpeg.VideoFilter(*input, *output, *fps, verLog)
+		err := ffmpeg.VideoFilter(*input, *output, *identifier, *fps, *maxLength, verLog)
 		if err != nil {
 			errLog.Println("failed to extract frames:", err)
 			os.Exit(1)
