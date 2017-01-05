@@ -10,8 +10,12 @@ import (
 	"log"
 	"os"
 	"path"
+	"strconv"
 
 	"golang.org/x/image/draw"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 )
 
 //TODO: Need to write a number on each image and a job number
@@ -36,7 +40,7 @@ import (
 // where 0,4,8 are printed on one page, 1,5,9 on another etc. This way you can simply
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
-func To4x6x3(bgColor, inputDir, outputDir string, verLog *log.Logger) error {
+func To4x6x3(bgColor, inputDir, outputDir, identifier string, verLog *log.Logger) error {
 	if verLog == nil {
 		verLog = log.New(ioutil.Discard, "", 0)
 	}
@@ -86,6 +90,12 @@ func To4x6x3(bgColor, inputDir, outputDir string, verLog *log.Logger) error {
 			err := compFrame(inputDir, frames, frameIndex, j, compWidth, compHeight, framesPerSheet, compImg, verLog)
 			if err != nil {
 				return err
+			}
+
+			y := compHeight / framesPerSheet
+			addLabel(compImg, 20, y*j+int(float64(y)*0.5), strconv.Itoa(frameIndex))
+			if identifier != "" {
+				addLabel(compImg, 20, y*j+int(float64(y)*0.5)+20, identifier)
 			}
 		}
 
@@ -156,4 +166,17 @@ func writeJPG(compImg *image.RGBA, outputDir string, imgIndex int, verLog *log.L
 
 	verLog.Println("written file:", toImgPath)
 	return nil
+}
+
+func addLabel(img *image.RGBA, x, y int, label string) {
+	col := color.RGBA{200, 100, 0, 255}
+	point := fixed.Point26_6{fixed.Int26_6(x * 64), fixed.Int26_6(y * 64)}
+
+	d := &font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(col),
+		Face: basicfont.Face7x13,
+		Dot:  point,
+	}
+	d.DrawString(label)
 }

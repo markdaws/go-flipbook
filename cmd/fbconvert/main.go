@@ -24,6 +24,8 @@ func main() {
 	clean := flag.Bool("clean", false, "If true, all files in the output directory are deleted before generating new items")
 	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black, defaults to white")
 	skipVideo := flag.Bool("skip", false, "If true frames are not extracted and the input option is not required, defaults to false")
+	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
+
 	flag.Parse()
 
 	infoLog := log.New(os.Stdout, "INFO: ", 0)
@@ -104,7 +106,7 @@ func main() {
 	if bgColorComp == "" {
 		bgColorComp = "white"
 	}
-	err := composite.To4x6x3(bgColorComp, *output, *output, verLog)
+	err := composite.To4x6x3(bgColorComp, *output, *output, *identifier, verLog)
 	if err != nil {
 		errLog.Println("failed to composite images:", err)
 		os.Exit(1)
