@@ -9,25 +9,26 @@ import (
 	"os/exec"
 	"path"
 	"strconv"
+	"strings"
 )
 
 // VideoFilter extracts individual frames from a video source and saves them as
 // images to the specified output location
-func VideoFilter(input, output, identifier string, fps, maxLength int, verLog *log.Logger) error {
+func VideoFilter(input, output, identifier string, fps, maxLength int, verLog *log.Logger) ([]os.FileInfo, error) {
 	if fps < 15 || fps > 60 {
-		return fmt.Errorf("fps must be between 15 and 60, %d invalid value", fps)
+		return nil, fmt.Errorf("fps must be between 15 and 60, %d invalid value", fps)
 	}
 
 	if _, err := os.Stat(input); os.IsNotExist(err) {
-		return fmt.Errorf("invalid input, file does not exist: %s", input)
+		return nil, fmt.Errorf("invalid input, file does not exist: %s", input)
 	}
 
 	if _, err := os.Stat(output); os.IsNotExist(err) {
-		return fmt.Errorf("invalid output, the directory does not exist, please create it:  %s", output)
+		return nil, fmt.Errorf("invalid output, the directory does not exist, please create it:  %s", output)
 	}
 
 	if installed, _ := FFMPEGIsInstalled(); !installed {
-		return fmt.Errorf("ffmpeg is not installed, please install then re-run")
+		return nil, fmt.Errorf("ffmpeg is not installed, please install then re-run")
 	}
 
 	if verLog == nil {
@@ -39,18 +40,31 @@ func VideoFilter(input, output, identifier string, fps, maxLength int, verLog *l
 	verLog.Println("fps=", fps)
 
 	var maxFrames = maxLength * fps
+	const prefix = "frame-"
 	cmd := exec.Command("ffmpeg", "-i", input, "-vframes", strconv.Itoa(maxFrames), "-start_number", "0",
-		"-vf", "fps="+strconv.Itoa(fps), path.Join(output, "frame-"+identifier+"-%03d.png"))
+		"-vf", "fps="+strconv.Itoa(fps), path.Join(output, prefix+identifier+"-%03d.png"))
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("failed to extract frames: %s, details: %s", err, stderr.String())
+		return nil, fmt.Errorf("failed to extract frames: %s, details: %s", err, stderr.String())
 	}
 
-	return nil
+	files, err := ioutil.ReadDir(output)
+	if err != nil {
+		return nil, err
+	}
+
+	var filteredFiles []os.FileInfo
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), prefix) {
+			filteredFiles = append(filteredFiles, f)
+		}
+	}
+
+	return filteredFiles, nil
 }
 
 // FFMPEGIsInstalled returns true if the ffmpeg binary is installed, along with the path
