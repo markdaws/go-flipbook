@@ -20,7 +20,7 @@ func main() {
 	verbose := flag.Bool("verbose", false, "Prints verbose output as the process is running")
 	input := flag.String("input", "", "Path to the input video source (required)")
 	output := flag.String("output", "", "Path where the images will be written to. Images will be generated with names img001.png, img002.png ... etc. (required)")
-	fps := flag.Int("fps", 15, "The number of frames to generate per second of video, defaults to 15. Min 15, max 60")
+	fps := flag.Int("fps", 15, "The number of frames to generate per second of video, defaults to 15. Min 10, max 60")
 	clean := flag.Bool("clean", false, "If true, all files in the output directory are deleted before generating new items")
 	cleanFrames := flag.Bool("cleanframes", false, "If true, deletes all of the individual video frames after compositing")
 	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black, defaults to white")
@@ -64,8 +64,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *fps < 15 || *fps > 60 {
-		errLog.Println("--fps must be a value between 15 and 60")
+	if *fps < 10 || *fps > 60 {
+		errLog.Println("--fps must be a value between 10 and 60")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}

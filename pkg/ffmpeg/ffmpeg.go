@@ -15,8 +15,8 @@ import (
 // VideoFilter extracts individual frames from a video source and saves them as
 // images to the specified output location
 func VideoFilter(input, output, identifier string, fps, maxLength int, verLog *log.Logger) ([]os.FileInfo, error) {
-	if fps < 15 || fps > 60 {
-		return nil, fmt.Errorf("fps must be between 15 and 60, %d invalid value", fps)
+	if fps < 10 || fps > 60 {
+		return nil, fmt.Errorf("fps must be between 10 and 60, %d invalid value", fps)
 	}
 
 	if _, err := os.Stat(input); os.IsNotExist(err) {
