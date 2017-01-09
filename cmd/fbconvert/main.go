@@ -27,6 +27,8 @@ func main() {
 	skipVideo := flag.Bool("skip", false, "If true frames are not extracted and the input option is not required, defaults to false")
 	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds, defaults to 5")
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
+	reversePages := flag.Bool("reversepages", false, "If true, the lowest numbered output page will contain the last frames. Useful if you print and don't want to have to manually reverse the printed stack for assembly, so you end up with page 1 on top")
+	reverseFrames := flag.Bool("reverseframes", false, "If true, frame 0 will be printed last, in this case you flip from the end of the book to the front to view the scene, which I have found is easier than flipping front to back")
 
 	flag.Parse()
 
@@ -111,7 +113,7 @@ func main() {
 		bgColorComp = "white"
 	}
 
-	err := composite.To4x6x3(bgColorComp, *output, *output, *identifier, verLog)
+	err := composite.To4x6x3(bgColorComp, *output, *output, *identifier, *reversePages, *reverseFrames, verLog)
 	if err != nil {
 		errLog.Println("failed to composite images:", err)
 		os.Exit(1)

@@ -40,7 +40,8 @@ import (
 // where 0,4,8 are printed on one page, 1,5,9 on another etc. This way you can simply
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
-func To4x6x3(bgColor, inputDir, outputDir, identifier string, verLog *log.Logger) error {
+func To4x6x3(bgColor, inputDir, outputDir, identifier string,
+	reversePages, reverseFrames bool, verLog *log.Logger) error {
 	if verLog == nil {
 		verLog = log.New(ioutil.Discard, "", 0)
 	}
@@ -61,7 +62,6 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string, verLog *log.Logger
 	nFrames := len(frames)
 	nOutput := nFrames / framesPerSheet
 	var compImg *image.RGBA
-	compIndex := 0
 
 	verLog.Println("reading input frames from:", inputDir)
 	verLog.Println(nFrames, " found for processing")
@@ -72,7 +72,6 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string, verLog *log.Logger
 			Min: image.Point{X: 0, Y: 0},
 			Max: image.Point{X: compWidth, Y: compHeight},
 		})
-		compIndex++
 
 		if bgColor == "white" {
 			draw.Draw(compImg, compImg.Bounds(), &image.Uniform{color.RGBA{255, 255, 255, 255}}, image.ZP, draw.Src)
@@ -87,6 +86,11 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string, verLog *log.Logger
 				break
 			}
 
+			// Flip the book from back to front vs front to back
+			if reverseFrames {
+				frameIndex = nFrames - frameIndex - 1
+			}
+
 			err := compFrame(inputDir, frames, frameIndex, j, compWidth, compHeight, framesPerSheet, compImg, verLog)
 			if err != nil {
 				return err
@@ -99,6 +103,15 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string, verLog *log.Logger
 			}
 		}
 
+		// When you print pictures, maybe the service orders them by filename e.g. comp001, comp002 etc so the last
+		// frames are printed on the top of the stack so you have to reverse them for assembly, this flag flips the
+		// numbering so that you don't need to do this after printing
+		var compIndex int
+		if reversePages {
+			compIndex = nOutput - i - 1
+		} else {
+			compIndex = i
+		}
 		err = writeJPG(compImg, outputDir, identifier, compIndex, verLog)
 		if err != nil {
 			return err
