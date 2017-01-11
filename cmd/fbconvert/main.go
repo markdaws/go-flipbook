@@ -16,19 +16,26 @@ var version string
 
 func main() {
 
-	ver := flag.Bool("version", false, "Displays the app version number")
-	verbose := flag.Bool("verbose", false, "Prints verbose output as the process is running")
+	//required
 	input := flag.String("input", "", "Path to the input video source (required)")
 	output := flag.String("output", "", "Path where the images will be written to. Images will be generated with names img001.png, img002.png ... etc. (required)")
-	fps := flag.Int("fps", 15, "The number of frames to generate per second of video, defaults to 15. Min 10, max 60")
+	fontPath := flag.String("fontpath", "", "Path to the font file used for the text on the front cover (HeleveticNeue.ttf is included in the github repo)")
+
+	//optional
+	line1Text := flag.String("line1text", "", "Text to display on line 1 of the flipbook cover")
+	line2Text := flag.String("line2text", "", "Text to display on line 2 of the flipbook cover")
+	fps := flag.Int("fps", 15, "The number of frames to generate per second of video. Min 10, max 60")
 	clean := flag.Bool("clean", false, "If true, all files in the output directory are deleted before generating new items")
 	cleanFrames := flag.Bool("cleanframes", false, "If true, deletes all of the individual video frames after compositing")
-	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black, defaults to white")
-	skipVideo := flag.Bool("skip", false, "If true frames are not extracted and the input option is not required, defaults to false")
-	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds, defaults to 5")
+	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black")
+	skipVideo := flag.Bool("skipvideo", false, "If true frames are not extracted and the input option is not required")
+	skipCover := flag.Bool("skipcover", false, "If true, a cover page is not added to the rendered frames")
+	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds")
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
 	reversePages := flag.Bool("reversepages", false, "If true, the lowest numbered output page will contain the last frames. Useful if you print and don't want to have to manually reverse the printed stack for assembly, so you end up with page 1 on top")
 	reverseFrames := flag.Bool("reverseframes", false, "If true, frame 0 will be printed last, in this case you flip from the end of the book to the front to view the scene, which I have found is easier than flipping front to back")
+	ver := flag.Bool("version", false, "Displays the app version number")
+	verbose := flag.Bool("verbose", false, "Prints verbose output as the process is running")
 
 	flag.Parse()
 
@@ -50,6 +57,12 @@ func main() {
 	case "white", "black":
 	default:
 		errLog.Println("--bgcolor must be white|black, invalid option:", *bgColor)
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if *fontPath == "" {
+		errLog.Println("fontpath is a required option\n\n")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -113,7 +126,10 @@ func main() {
 		bgColorComp = "white"
 	}
 
-	err := composite.To4x6x3(bgColorComp, *output, *output, *identifier, *reversePages, *reverseFrames, verLog)
+	err := composite.To4x6x3(
+		bgColorComp, *output, *output, *line1Text, *line2Text, *fontPath,
+		*identifier, *reversePages, *reverseFrames, *skipCover, verLog)
+
 	if err != nil {
 		errLog.Println("failed to composite images:", err)
 		os.Exit(1)

@@ -16,9 +16,10 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
-)
 
-//TODO: Need to write a number on each image and a job number
+	"github.com/disintegration/imaging"
+	"github.com/golang/freetype"
+)
 
 // To4x6x3 composites the source images to a 6x4 format, with 3 frames per image. Each frame will
 // get 4x2 in dimension within the 6x4 image.
@@ -40,8 +41,8 @@ import (
 // where 0,4,8 are printed on one page, 1,5,9 on another etc. This way you can simply
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
-func To4x6x3(bgColor, inputDir, outputDir, identifier string,
-	reversePages, reverseFrames bool, verLog *log.Logger) error {
+func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, fontPath, identifier string,
+	reversePages, reverseFrames, skipCover bool, verLog *log.Logger) error {
 	if verLog == nil {
 		verLog = log.New(ioutil.Discard, "", 0)
 	}
@@ -54,14 +55,44 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string,
 	const compWidth = 1200
 	const compHeight = 1800
 	const framesPerSheet = 3
+	var coverImgIndex int
+	var coverImgInfo os.FileInfo
+
+	if !skipCover {
+		coverFrame := frames[0]
+		coverFramePath := path.Join(inputDir, coverFrame.Name())
+		coverImg, err := renderFrontCover(coverFramePath, fontPath, line1Text, line2Text)
+		if err != nil {
+			return fmt.Errorf("failed to generate cover image: %s", err)
+		}
+
+		coverImgOutPath := path.Join(outputDir, "cover.png")
+		err = imaging.Save(coverImg, coverImgOutPath)
+		if err != nil {
+			return fmt.Errorf("failed to save cover image: %s", err)
+		}
+
+		coverImgInfo, err = os.Stat(coverImgOutPath)
+		if err != nil {
+			return fmt.Errorf("failed to stat cover image: %s", err)
+		}
+	}
 
 	// Don't want to waste any paper, so we have some multiple of framesPerSheet so that
 	// all sheets are completely full, at most we lose two end frames
-	frames = frames[:framesPerSheet*len(frames)/framesPerSheet]
-
+	frames = frames[:framesPerSheet*(len(frames)/framesPerSheet)]
 	nFrames := len(frames)
 	nOutput := nFrames / framesPerSheet
 	var compImg *image.RGBA
+
+	if !skipCover {
+		if reverseFrames {
+			coverImgIndex = len(frames) - 1
+		} else {
+			coverImgIndex = 0
+		}
+		frames[coverImgIndex] = coverImgInfo
+	}
 
 	verLog.Println("reading input frames from:", inputDir)
 	verLog.Println(nFrames, " found for processing")
@@ -91,15 +122,22 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string,
 				frameIndex = nFrames - frameIndex - 1
 			}
 
-			err := compFrame(inputDir, frames, frameIndex, j, compWidth, compHeight, framesPerSheet, compImg, verLog)
+			frame := frames[frameIndex]
+			framePath := path.Join(inputDir, frame.Name())
+
+			err := compFrame(framePath, j, compWidth, compHeight, framesPerSheet, compImg, verLog)
 			if err != nil {
 				return err
 			}
 
-			y := compHeight / framesPerSheet
-			addLabel(compImg, 20, y*j+int(float64(y)*0.5), strconv.Itoa(frameIndex))
-			if identifier != "" {
-				addLabel(compImg, 20, y*j+int(float64(y)*0.5)+20, identifier)
+			// Don't want to put info on the cover image
+			fmt.Println(i, ":", j, ":", frameIndex)
+			if frameIndex != coverImgIndex {
+				y := compHeight / framesPerSheet
+				addLabel(compImg, 20, y*j+int(float64(y)*0.5), strconv.Itoa(frameIndex))
+				if identifier != "" {
+					addLabel(compImg, 20, y*j+int(float64(y)*0.5)+20, identifier)
+				}
 			}
 		}
 
@@ -121,11 +159,74 @@ func To4x6x3(bgColor, inputDir, outputDir, identifier string,
 	return nil
 }
 
+func renderFrontCover(framePath, fontPath, labelLine1, labelLine2 string) (image.Image, error) {
+	src, err := imaging.Open(framePath)
+	if err != nil {
+		return nil, err
+	}
+
+	dst := imaging.Blur(src, 12.5)
+
+	drawBar := false
+	barWidth := 0
+	if drawBar {
+		barWidth = src.Bounds().Dx() / 7
+		draw.Draw(dst, image.Rectangle{
+			Min: image.Point{X: 0, Y: 0},
+			Max: image.Point{X: barWidth, Y: src.Bounds().Dy()},
+		}, image.Black, image.ZP, draw.Src)
+	}
+
+	c := freetype.NewContext()
+	fontBytes, err := ioutil.ReadFile("/Users/mark/code/go/src/github.com/markdaws/go-flipbook/HelveticaNeue.ttf")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the font file: %s, %s", fontPath, err)
+	}
+
+	f, err := freetype.ParseFont(fontBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse font file: %s, %s", fontPath, err)
+	}
+
+	c.SetDPI(70)
+	c.SetFont(f)
+	c.SetClip(dst.Bounds())
+	c.SetDst(dst)
+	c.SetHinting(font.HintingFull)
+
+	var renderText = func(x, y int, size float64, fg *image.Uniform, label string) error {
+		c.SetFontSize(size)
+		c.SetSrc(fg)
+
+		pt := freetype.Pt(x, y+int(c.PointToFixed(size)>>6))
+		_, err := c.DrawString(label, pt)
+		return err
+	}
+
+	line1FontSize := 80.0
+	line2FontSize := 45.0
+	line2YOffset := 100
+	x := barWidth + 40
+	y := 30
+
+	if err = renderText(x, y, line1FontSize, image.Black, labelLine1); err != nil {
+		return nil, err
+	}
+	if err = renderText(x-2, y-2, line1FontSize, image.White, labelLine1); err != nil {
+		return nil, err
+	}
+	if err = renderText(x, y+line2YOffset, line2FontSize, image.Black, labelLine2); err != nil {
+		return nil, err
+	}
+	if err = renderText(x-2, y-2+line2YOffset, line2FontSize, image.White, labelLine2); err != nil {
+		return nil, err
+	}
+	return dst, nil
+}
+
 func compFrame(
-	inputDir string, frames []os.FileInfo, frameIndex, compIndex, compWidth, compHeight, framesPerSheet int,
+	inputImgPath string, compIndex, compWidth, compHeight, framesPerSheet int,
 	compImg *image.RGBA, verLog *log.Logger) error {
-	img := frames[frameIndex]
-	inputImgPath := path.Join(inputDir, img.Name())
 	verLog.Println("reading:", inputImgPath)
 
 	srcReader, err := os.Open(inputImgPath)
