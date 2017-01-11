@@ -21,7 +21,7 @@ go install ./cmd/fbconvert/... && fbconvert -bgcolor=black -clean -fps=15  -iden
 
 ##Options
 
-```bash
+```
 Usage of fbconvert:
   -bgcolor string
     	The background color of the image (for border). Can be white|black (default "white")
