@@ -105,9 +105,9 @@ func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, fontPath, ident
 		})
 
 		if bgColor == "white" {
-			draw.Draw(compImg, compImg.Bounds(), &image.Uniform{color.RGBA{255, 255, 255, 255}}, image.ZP, draw.Src)
+			draw.Draw(compImg, compImg.Bounds(), image.White, image.ZP, draw.Src)
 		} else {
-			draw.Draw(compImg, compImg.Bounds(), &image.Uniform{color.RGBA{0, 0, 0, 255}}, image.ZP, draw.Src)
+			draw.Draw(compImg, compImg.Bounds(), image.Black, image.ZP, draw.Src)
 		}
 
 		for j := 0; j < framesPerSheet; j++ {
@@ -130,8 +130,7 @@ func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, fontPath, ident
 				return err
 			}
 
-			// Don't want to put info on the cover image
-			fmt.Println(i, ":", j, ":", frameIndex)
+			// Don't want to put identifier info on the cover image
 			if frameIndex != coverImgIndex {
 				y := compHeight / framesPerSheet
 				addLabel(compImg, 20, y*j+int(float64(y)*0.5), strconv.Itoa(frameIndex))
@@ -178,7 +177,7 @@ func renderFrontCover(framePath, fontPath, labelLine1, labelLine2 string) (image
 	}
 
 	c := freetype.NewContext()
-	fontBytes, err := ioutil.ReadFile("/Users/mark/code/go/src/github.com/markdaws/go-flipbook/HelveticaNeue.ttf")
+	fontBytes, err := ioutil.ReadFile(fontPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read the font file: %s, %s", fontPath, err)
 	}
