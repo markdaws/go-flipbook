@@ -30,6 +30,7 @@ func main() {
 	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black")
 	skipVideo := flag.Bool("skipvideo", false, "If true frames are not extracted and the input option is not required")
 	skipCover := flag.Bool("skipcover", false, "If true, a cover page is not added to the rendered frames")
+	startTime := flag.Int("starttime", 0, "The start time in the input video to use as the start of the flip book")
 	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds")
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
 	reversePages := flag.Bool("reversepages", false, "If true, the lowest numbered output page will contain the last frames. Useful if you print and don't want to have to manually reverse the printed stack for assembly, so you end up with page 1 on top")
@@ -113,7 +114,7 @@ func main() {
 	if !*skipVideo {
 		// Generate all the stills from the input
 		var err error
-		frames, err = ffmpeg.VideoFilter(*input, *output, *identifier, *fps, *maxLength, verLog)
+		frames, err = ffmpeg.VideoFilter(*input, *output, *identifier, *fps, uint(*startTime), *maxLength, verLog)
 		if err != nil {
 			errLog.Println("failed to extract frames:", err)
 			os.Exit(1)
