@@ -19,9 +19,9 @@ func main() {
 	//required
 	input := flag.String("input", "", "Path to the input video source (required)")
 	output := flag.String("output", "", "Path where the images will be written to. Images will be generated with names img001.png, img002.png ... etc. (required)")
-	fontPath := flag.String("fontpath", "", "Path to the font file used for the text on the front cover (HeleveticNeue.ttf is included in the github repo)")
 
 	//optional
+	fontPath := flag.String("fontpath", "", "Path to the font file used for the text on the front cover (must be a ttf file). If not specified, HelveticaNeue will be used")
 	line1Text := flag.String("line1text", "", "Text to display on line 1 of the flipbook cover")
 	line2Text := flag.String("line2text", "", "Text to display on line 2 of the flipbook cover")
 	fps := flag.Int("fps", 15, "The number of frames to generate per second of video. Min 10, max 60")
@@ -62,10 +62,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *fontPath == "" {
-		errLog.Println("fontpath is a required option\n\n")
-		flag.PrintDefaults()
-		os.Exit(1)
+	var fontBytes []byte
+	if *fontPath != "" {
+		var err error
+		fontBytes, err = ioutil.ReadFile(*fontPath)
+		if err != nil {
+			errLog.Println("--fontpath cannot open font file:", *fontPath)
+			os.Exit(1)
+		}
+	} else {
+		var err error
+		// defined in auto generated bindata.go file
+		fontBytes, err = Asset("data/HelveticaNeue.ttf")
+		if err != nil {
+			errLog.Println("failed to read default font HelveticaNeue")
+			os.Exit(1)
+		}
 	}
 
 	if *input == "" && !*skipVideo {
@@ -128,8 +140,8 @@ func main() {
 	}
 
 	err := composite.To4x6x3(
-		bgColorComp, *output, *output, *line1Text, *line2Text, *fontPath,
-		*identifier, *reversePages, *reverseFrames, *skipCover, verLog)
+		bgColorComp, *output, *output, *line1Text, *line2Text, *identifier,
+		fontBytes, *reversePages, *reverseFrames, *skipCover, verLog)
 
 	if err != nil {
 		errLog.Println("failed to composite images:", err)

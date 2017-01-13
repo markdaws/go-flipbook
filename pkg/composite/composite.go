@@ -41,7 +41,7 @@ import (
 // where 0,4,8 are printed on one page, 1,5,9 on another etc. This way you can simply
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
-func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, fontPath, identifier string,
+func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, identifier string, fontBytes []byte,
 	reversePages, reverseFrames, skipCover bool, verLog *log.Logger) error {
 	if verLog == nil {
 		verLog = log.New(ioutil.Discard, "", 0)
@@ -61,7 +61,7 @@ func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, fontPath, ident
 	if !skipCover {
 		coverFrame := frames[0]
 		coverFramePath := path.Join(inputDir, coverFrame.Name())
-		coverImg, err := renderFrontCover(coverFramePath, fontPath, line1Text, line2Text)
+		coverImg, err := renderFrontCover(coverFramePath, line1Text, line2Text, fontBytes)
 		if err != nil {
 			return fmt.Errorf("failed to generate cover image: %s", err)
 		}
@@ -158,7 +158,7 @@ func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, fontPath, ident
 	return nil
 }
 
-func renderFrontCover(framePath, fontPath, labelLine1, labelLine2 string) (image.Image, error) {
+func renderFrontCover(framePath, labelLine1, labelLine2 string, fontBytes []byte) (image.Image, error) {
 	src, err := imaging.Open(framePath)
 	if err != nil {
 		return nil, err
@@ -177,14 +177,10 @@ func renderFrontCover(framePath, fontPath, labelLine1, labelLine2 string) (image
 	}
 
 	c := freetype.NewContext()
-	fontBytes, err := ioutil.ReadFile(fontPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read the font file: %s, %s", fontPath, err)
-	}
 
 	f, err := freetype.ParseFont(fontBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse font file: %s, %s", fontPath, err)
+		return nil, fmt.Errorf("failed to parse font file: %s", err)
 	}
 
 	c.SetDPI(70)
