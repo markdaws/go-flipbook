@@ -42,7 +42,7 @@ import (
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
 func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, identifier string, fontBytes []byte,
-	reversePages, reverseFrames, skipCover bool, verLog *log.Logger) error {
+	reversePages, reverseFrames, skipCover, smallFrames bool, verLog *log.Logger) error {
 	if verLog == nil {
 		verLog = log.New(ioutil.Discard, "", 0)
 	}
@@ -98,6 +98,11 @@ func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, identifier stri
 	verLog.Println(nFrames, " found for processing")
 	verLog.Println("composite images ", compWidth, "x", compHeight)
 
+	smallImg := image.NewRGBA(image.Rectangle{
+		Min: image.Point{X: 0, Y: 0},
+		Max: image.Point{X: compWidth / 2, Y: compHeight / 2 / framesPerSheet},
+	})
+
 	for i := 0; i < nOutput; i++ {
 		compImg = image.NewRGBA(image.Rectangle{
 			Min: image.Point{X: 0, Y: 0},
@@ -138,6 +143,24 @@ func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, identifier stri
 					addLabel(compImg, 20, y*j+int(float64(y)*0.5)+20, identifier)
 				}
 			}
+
+			if smallFrames {
+				dstRect := image.Rectangle{
+					Min: image.Point{X: 0, Y: 0},
+					Max: image.Point{X: smallImg.Bounds().Dx(), Y: smallImg.Bounds().Dy()},
+				}
+				srcRect := image.Rectangle{
+					Min: image.Point{X: 0, Y: (compHeight / framesPerSheet) * j},
+					Max: image.Point{X: compImg.Bounds().Dx(), Y: (compHeight / framesPerSheet) * (j + 1)},
+				}
+				draw.BiLinear.Scale(smallImg, dstRect, compImg, srcRect, draw.Src, nil)
+
+				err = writeJPG(smallImg, outputDir, identifier+"-small", frameIndex, verLog)
+				if err != nil {
+					return err
+				}
+			}
+
 		}
 
 		// When you print pictures, maybe the service orders them by filename e.g. comp001, comp002 etc so the last
@@ -267,7 +290,7 @@ func writeJPG(compImg *image.RGBA, outputDir, identifier string, imgIndex int, v
 
 	verLog.Println("writing:", toImgPath)
 
-	err = jpeg.Encode(toImg, compImg, &jpeg.Options{Quality: 95})
+	err = jpeg.Encode(toImg, compImg, &jpeg.Options{Quality: 90})
 	toImg.Close()
 	if err != nil {
 		return fmt.Errorf("failed to save img: %s, %s", toImgPath, err)

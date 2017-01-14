@@ -35,6 +35,7 @@ func main() {
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
 	reversePages := flag.Bool("reversepages", false, "If true, the lowest numbered output page will contain the last frames. Useful if you print and don't want to have to manually reverse the printed stack for assembly, so you end up with page 1 on top")
 	reverseFrames := flag.Bool("reverseframes", false, "If true, frame 0 will be printed last, in this case you flip from the end of the book to the front to view the scene, which I have found is easier than flipping front to back")
+	smallFrames := flag.Bool("smallframes", false, "If true, we create small 600x300 version of each of the final images, can be useful if you want to show a preview of each page somewhere")
 	ver := flag.Bool("version", false, "Displays the app version number")
 	verbose := flag.Bool("verbose", false, "Prints verbose output as the process is running")
 
@@ -141,7 +142,7 @@ func main() {
 
 	err := composite.To4x6x3(
 		bgColorComp, *output, *output, *line1Text, *line2Text, *identifier,
-		fontBytes, *reversePages, *reverseFrames, *skipCover, verLog)
+		fontBytes, *reversePages, *reverseFrames, *skipCover, *smallFrames, verLog)
 
 	if err != nil {
 		errLog.Println("failed to composite images:", err)
