@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"io/ioutil"
 	"log"
@@ -24,6 +25,7 @@ func main() {
 	fontPath := flag.String("fontpath", "", "Path to the font file used for the text on the front cover (must be a ttf file). If not specified, HelveticaNeue will be used")
 	line1Text := flag.String("line1text", "", "Text to display on line 1 of the flipbook cover")
 	line2Text := flag.String("line2text", "", "Text to display on line 2 of the flipbook cover")
+	titleEncoded := flag.Bool("titleencoded", false, "If true, the line1text and line2text are expected to be base64 encoded strings, useful for untrusted input")
 	fps := flag.Int("fps", 15, "The number of frames to generate per second of video. Min 10, max 60")
 	clean := flag.Bool("clean", false, "If true, all files in the output directory are deleted before generating new items")
 	cleanFrames := flag.Bool("cleanframes", false, "If true, deletes all of the individual video frames after compositing")
@@ -140,8 +142,25 @@ func main() {
 		bgColorComp = "white"
 	}
 
+	line1 := *line1Text
+	line2 := *line2Text
+	if *titleEncoded {
+		b, err := base64.StdEncoding.DecodeString(line1)
+		if err != nil {
+			errLog.Println("error decoding line1text:", err)
+			os.Exit(1)
+		}
+		line1 = string(b)
+		b, err = base64.StdEncoding.DecodeString(line2)
+		if err != nil {
+			errLog.Println("error decoding line2text:", err)
+			os.Exit(1)
+		}
+		line2 = string(b)
+	}
+
 	err := composite.To4x6x3(
-		bgColorComp, *output, *output, *line1Text, *line2Text, *identifier,
+		bgColorComp, *output, *output, line1, line2, *identifier,
 		fontBytes, *reversePages, *reverseFrames, *skipCover, *smallFrames, verLog)
 
 	if err != nil {
