@@ -33,6 +33,7 @@ func main() {
 	skipVideo := flag.Bool("skipvideo", false, "If true frames are not extracted and the input option is not required")
 	cover := flag.Bool("cover", false, "If true, a cover page is added to the rendered frames")
 	startTime := flag.Int("starttime", 0, "The start time in the input video to use as the start of the flip book")
+	layout := flag.String("layout", "4x6x3", "Determines how the flip book pages should be laid out. Values are 4x6x3, which gives 3 frames per 6x4 photo size, each 4x2, the other option is letter which is 12 frames laid out on a 8.5x11, each frame is 4.25x2. You can also specify letter-business which prints business size cards 3.5x2 on a letter paper, 10 cards per sheet")
 	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds")
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
 	reversePages := flag.Bool("reversepages", false, "If true, the lowest numbered output page will contain the last frames. Useful if you print and don't want to have to manually reverse the printed stack for assembly, so you end up with page 1 on top")
@@ -156,7 +157,60 @@ func main() {
 		line2 = string(b)
 	}
 
-	/*
+	var err error
+	switch *layout {
+	case "4x6x3":
+		page := composite.Page{
+			Width:        4,
+			Height:       6,
+			MarginTop:    0,
+			MarginRight:  0,
+			MarginBottom: 0,
+			MarginLeft:   0,
+			DPI:          300,
+		}
+
+		err = composite.To4x6x3(composite.Options{
+			Page:          page,
+			BGColor:       bgColorComp,
+			OutputDir:     *output,
+			InputDir:      *output,
+			Line1Text:     line1,
+			Line2Text:     line2,
+			Identifier:    *identifier,
+			FontBytes:     fontBytes,
+			ReversePages:  *reversePages,
+			ReverseFrames: *reverseFrames,
+			Cover:         *cover,
+			VerLog:        verLog,
+		})
+
+	case "letter":
+		page := composite.Page{
+			Width:        8.5,
+			Height:       11,
+			MarginTop:    0,
+			MarginRight:  0,
+			MarginBottom: 1,
+			MarginLeft:   0,
+			DPI:          300,
+		}
+		err = composite.ToLetter(composite.Options{
+			Page:          page,
+			BGColor:       bgColorComp,
+			OutputDir:     *output,
+			InputDir:      *output,
+			Line1Text:     line1,
+			Line2Text:     line2,
+			Identifier:    *identifier,
+			FontBytes:     fontBytes,
+			ReversePages:  *reversePages,
+			ReverseFrames: *reverseFrames,
+			Cover:         *cover,
+			VerLog:        verLog,
+		})
+
+	case "letter-business":
 		page := composite.Page{
 			Width:        8.5,
 			Height:       11,
@@ -166,34 +220,26 @@ func main() {
 			MarginLeft:   0.5,
 			DPI:          300,
 		}
-	*/
+		err = composite.ToLetter(composite.Options{
+			Page:          page,
+			BGColor:       bgColorComp,
+			OutputDir:     *output,
+			InputDir:      *output,
+			Line1Text:     line1,
+			Line2Text:     line2,
+			Identifier:    *identifier,
+			FontBytes:     fontBytes,
+			ReversePages:  *reversePages,
+			ReverseFrames: *reverseFrames,
+			Cover:         *cover,
+			VerLog:        verLog,
+		})
 
-	page := composite.Page{
-		Width:        4,
-		Height:       6,
-		MarginTop:    0,
-		MarginRight:  0,
-		MarginBottom: 0,
-		MarginLeft:   0,
-		DPI:          300,
+	default:
+		errLog.Println("invalid layout value:", *layout)
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
-
-	err := composite.To4x6x3(composite.Options{
-		Page:          page,
-		Rows:          3,
-		Cols:          1,
-		BGColor:       bgColorComp,
-		OutputDir:     *output,
-		InputDir:      *output,
-		Line1Text:     line1,
-		Line2Text:     line2,
-		Identifier:    *identifier,
-		FontBytes:     fontBytes,
-		ReversePages:  *reversePages,
-		ReverseFrames: *reverseFrames,
-		Cover:         *cover,
-		VerLog:        verLog,
-	})
 
 	if err != nil {
 		errLog.Println("failed to composite images:", err)

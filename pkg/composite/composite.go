@@ -137,6 +137,9 @@ type layoutFunc func(pageIndex, nPages, frontCoverIndex int, renderBounds rect, 
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
 func To4x6x3(opts Options) error {
+	opts.Rows = 3
+	opts.Cols = 1
+
 	layoutPage := func(pageIndex, nPages, frontCoverIndex int, renderBounds rect, opts Options, frames []os.FileInfo) []frame {
 		var pageLayout []frame
 		nFrames := len(frames)
@@ -166,6 +169,50 @@ func To4x6x3(opts Options) error {
 		}
 		return pageLayout
 	}
+
+	return renderPages(opts, layoutPage)
+}
+
+func ToLetter(opts Options) error {
+	opts.Rows = 5
+	opts.Cols = 2
+
+	layoutPage := func(pageIndex, nPages, frontCoverIndex int, renderBounds rect, opts Options, frames []os.FileInfo) []frame {
+		var pageLayout []frame
+		nFrames := len(frames)
+		//framesPerPage := opts.Cols * opts.Rows
+
+		for ci := 0; ci < opts.Cols; ci++ {
+			for ri := 0; ri < opts.Rows; ri++ {
+				//fi := pageIndex*framesPerPage + ri + ci*opts.Rows
+
+				fi := pageIndex + (ri*nPages + ci*nPages*opts.Rows)
+
+				if opts.ReverseFrames {
+					fi = nFrames - fi - 1
+				}
+
+				frameHeight := renderBounds.height / opts.Rows
+				frameWidth := renderBounds.width / opts.Cols
+				f := frame{
+					path: opts.InputDir,
+					info: frames[fi],
+					bounds: rect{
+						left:   renderBounds.left + ci*frameWidth,
+						top:    renderBounds.top + frameHeight*ri,
+						width:  frameWidth,
+						height: frameHeight,
+					},
+					index:        fi,
+					isFrontCover: fi == frontCoverIndex,
+					label:        opts.Identifier,
+				}
+				pageLayout = append(pageLayout, f)
+			}
+		}
+		return pageLayout
+	}
+
 	return renderPages(opts, layoutPage)
 }
 
@@ -189,7 +236,7 @@ func renderPages(opts Options, layout layoutFunc) error {
 	if opts.Cover {
 		coverFrame := frames[0]
 		coverFramePath := path.Join(opts.InputDir, coverFrame.Name())
-		coverImg, err := renderFrontCover(coverFramePath, opts.Line1Text, opts.Line2Text, opts.FontBytes)
+		coverImg, err := renderFrontCover(coverFramePath)
 		if err != nil {
 			return fmt.Errorf("failed to generate cover image: %s", err)
 		}
@@ -239,7 +286,7 @@ func renderPages(opts Options, layout layoutFunc) error {
 		pageLayout := layout(pi, nPages, coverImgIndex, renderBounds, opts, frames)
 
 		for fi := range pageLayout {
-			err := compFrame(compImg, pageLayout[fi], opts.VerLog)
+			err := compFrame(compImg, pageLayout[fi], opts.Line1Text, opts.Line2Text, opts.FontBytes, opts.VerLog)
 			if err != nil {
 				return err
 			}
@@ -263,24 +310,27 @@ func renderPages(opts Options, layout layoutFunc) error {
 	return nil
 }
 
-func renderFrontCover(framePath, labelLine1, labelLine2 string, fontBytes []byte) (image.Image, error) {
+func renderFrontCover(framePath string) (image.Image, error) {
 	src, err := imaging.Open(framePath)
 	if err != nil {
 		return nil, err
 	}
 
 	dst := imaging.Blur(src, 12.5)
-	c := freetype.NewContext()
+	return dst, nil
+}
 
+func annotateFrontCover(img *image.RGBA, dstRect image.Rectangle, labelLine1, labelLine2 string, fontBytes []byte) error {
 	f, err := freetype.ParseFont(fontBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse font file: %s", err)
+		return fmt.Errorf("failed to parse font file: %s", err)
 	}
 
+	c := freetype.NewContext()
 	c.SetDPI(70)
 	c.SetFont(f)
-	c.SetClip(dst.Bounds())
-	c.SetDst(dst)
+	c.SetClip(dstRect)
+	c.SetDst(img)
 	c.SetHinting(font.HintingFull)
 
 	var renderText = func(x, y int, size float64, fg *image.Uniform, label string) error {
@@ -295,25 +345,25 @@ func renderFrontCover(framePath, labelLine1, labelLine2 string, fontBytes []byte
 	line1FontSize := 80.0
 	line2FontSize := 45.0
 	line2YOffset := 100
-	x := 140
-	y := 30
+	x := dstRect.Min.X + 80
+	y := dstRect.Min.Y + 30
 
 	if err = renderText(x, y, line1FontSize, image.Black, labelLine1); err != nil {
-		return nil, err
+		return err
 	}
 	if err = renderText(x-2, y-2, line1FontSize, image.White, labelLine1); err != nil {
-		return nil, err
+		return err
 	}
 	if err = renderText(x, y+line2YOffset, line2FontSize, image.Black, labelLine2); err != nil {
-		return nil, err
+		return err
 	}
 	if err = renderText(x-2, y-2+line2YOffset, line2FontSize, image.White, labelLine2); err != nil {
-		return nil, err
+		return err
 	}
-	return dst, nil
+	return nil
 }
 
-func compFrame(compImg *image.RGBA, f frame, verLog *log.Logger) error {
+func compFrame(compImg *image.RGBA, f frame, labelLine1, labelLine2 string, fontBytes []byte, verLog *log.Logger) error {
 
 	imgPath := path.Join(f.path, f.info.Name())
 	verLog.Println("reading:", imgPath)
@@ -372,6 +422,13 @@ func compFrame(compImg *image.RGBA, f frame, verLog *log.Logger) error {
 		yOffset := 20
 		addDebugLabel(compImg, x, y, strconv.Itoa(f.index))
 		addDebugLabel(compImg, x, y+yOffset, f.label)
+	}
+
+	if f.isFrontCover {
+		err := annotateFrontCover(compImg, dstRect, labelLine1, labelLine2, fontBytes)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
