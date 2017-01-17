@@ -31,7 +31,7 @@ func main() {
 	cleanFrames := flag.Bool("cleanframes", false, "If true, deletes all of the individual video frames after compositing")
 	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black")
 	skipVideo := flag.Bool("skipvideo", false, "If true frames are not extracted and the input option is not required")
-	skipCover := flag.Bool("skipcover", false, "If true, a cover page is not added to the rendered frames")
+	cover := flag.Bool("cover", false, "If true, a cover page is added to the rendered frames")
 	startTime := flag.Int("starttime", 0, "The start time in the input video to use as the start of the flip book")
 	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds")
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
@@ -127,7 +127,6 @@ func main() {
 
 	var frames []os.FileInfo
 	if !*skipVideo {
-		// Generate all the stills from the input
 		var err error
 		frames, err = ffmpeg.VideoFilter(*input, *output, *identifier, *fps, uint(*startTime), *maxLength, verLog)
 		if err != nil {
@@ -136,7 +135,6 @@ func main() {
 		}
 	}
 
-	// Generate composites
 	bgColorComp := *bgColor
 	if bgColorComp == "" {
 		bgColorComp = "white"
@@ -159,9 +157,45 @@ func main() {
 		line2 = string(b)
 	}
 
-	err := composite.To4x6x3(
-		bgColorComp, *output, *output, line1, line2, *identifier,
-		fontBytes, *reversePages, *reverseFrames, *skipCover, *smallFrames, verLog)
+	/*
+		page := composite.Page{
+			Width:        8.5,
+			Height:       11,
+			MarginTop:    0.5,
+			MarginRight:  0.5,
+			MarginBottom: 0.5,
+			MarginLeft:   0.5,
+			DPI:          300,
+		}
+	*/
+
+	page = composite.Page{
+		Width:        4,
+		Height:       6,
+		MarginTop:    0,
+		MarginRight:  0,
+		MarginBottom: 0,
+		MarginLeft:   0,
+		DPI:          300,
+	}
+
+	err := composite.To4x6x3(composite.Options{
+		Page:          page,
+		Rows:          3,
+		Cols:          1,
+		BGColor:       bgColorComp,
+		OutputDir:     *output,
+		InputDir:      *output,
+		Line1Text:     line1,
+		Line2Text:     line2,
+		Identifier:    *identifier,
+		FontBytes:     fontBytes,
+		ReversePages:  *reversePages,
+		ReverseFrames: *reverseFrames,
+		Cover:         *cover,
+		SmallFrames:   *smallFrames,
+		VerLog:        verLog,
+	})
 
 	if err != nil {
 		errLog.Println("failed to composite images:", err)

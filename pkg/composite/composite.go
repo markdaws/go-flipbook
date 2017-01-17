@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"path"
 	"strconv"
@@ -20,6 +21,100 @@ import (
 	"github.com/disintegration/imaging"
 	"github.com/golang/freetype"
 )
+
+// Page defines all of the parameters of a single page, that can hold one
+// or more frames
+type Page struct {
+	// Width of the page in inches
+	Width float32
+
+	// Height of the page in inches
+	Height float32
+
+	// MarginTop size of top margin in inches
+	MarginTop float32
+
+	// MarginRight size of right margin in inches
+	MarginRight float32
+
+	// MarginBottom size of bottom margin in inches
+	MarginBottom float32
+
+	// MarginLeft size of left margin in inches
+	MarginLeft float32
+
+	// DPI number of dots per inch e.g. 300
+	DPI int
+}
+
+// Options allows callers to define all of the composition options
+type Options struct {
+	// Page reference to a page object, that contains dimensions and margins
+	Page Page
+
+	// Rows the number of rows of frames to composite on one page
+	Rows int
+
+	// Cols the number of columns of frames to composite on one page
+	Cols int
+
+	// BGColor the background color to use for parts of the page not covered by a frame, black|white
+	BGColor string
+
+	// InputDir the directory containing all of the individual frames, it is assumed nothing
+	// but frame images are in this directory
+	InputDir string
+
+	// OutputDir the directory where the final composite images will be written to
+	OutputDir string
+
+	// Line1Text the text to show in the cover page, the first line of the title
+	Line1Text string
+
+	// Line2Text the text to show in the cover page, the second line of the title
+	Line2Text string
+
+	// Identifier a string printed in the margin of each page to help identify the frames
+	Identifier string
+
+	// FontBytes bytes read in from a ttf file for the font to use on the front cover
+	FontBytes []byte
+
+	// ReversePages if true we print the last page first, useful if you are printing in order,
+	// so you don't have to manually reverse the pages before cutting them
+	ReversePages bool
+
+	// ReverseFrames if true we print the last frame first, useful if you want the flip book to flip
+	// from back to front, which can be easier to watch sometimes
+	ReverseFrames bool
+
+	// Cover if true a cover image is rendered
+	Cover bool
+
+	// SmallFrames if true half size versions of each frame are created in the output dir
+	SmallFrames bool
+
+	// VerLog a logger that will receive verbose information
+	VerLog *log.Logger
+}
+
+type rect struct {
+	top    int
+	left   int
+	width  int
+	height int
+}
+
+type frame struct {
+	path         string
+	index        int
+	label        string
+	info         os.FileInfo
+	isFrontCover bool
+	bounds       rect
+}
+
+type layoutFunc func(pageIndex, nPages, frontCoverIndex int, renderBounds rect, opts Options, frames []os.FileInfo) []frame
 
 // To4x6x3 composites the source images to a 6x4 format, with 3 frames per image. Each frame will
 // get 4x2 in dimension within the 6x4 image.
@@ -41,52 +136,76 @@ import (
 // where 0,4,8 are printed on one page, 1,5,9 on another etc. This way you can simply
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
-func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, identifier string, fontBytes []byte,
-	reversePages, reverseFrames, skipCover, smallFrames bool, verLog *log.Logger) error {
-	if verLog == nil {
-		verLog = log.New(ioutil.Discard, "", 0)
+func To4x6x3(opts Options) error {
+	layoutPage := func(pageIndex, nPages, frontCoverIndex int, renderBounds rect, opts Options, frames []os.FileInfo) []frame {
+		var pageLayout []frame
+		nFrames := len(frames)
+
+		for ri := 0; ri < opts.Rows; ri++ {
+			fi := pageIndex + ri*nPages
+
+			if opts.ReverseFrames {
+				fi = nFrames - fi - 1
+			}
+
+			frameHeight := renderBounds.height / opts.Rows
+			f := frame{
+				path: opts.InputDir,
+				info: frames[fi],
+				bounds: rect{
+					left:   renderBounds.left,
+					top:    renderBounds.top + frameHeight*ri,
+					width:  renderBounds.width,
+					height: frameHeight,
+				},
+				index:        fi,
+				isFrontCover: fi == frontCoverIndex,
+				label:        opts.Identifier,
+			}
+			pageLayout = append(pageLayout, f)
+		}
+		return pageLayout
+	}
+	return renderPages(opts, layoutPage)
+}
+
+func renderPages(opts Options, layout layoutFunc) error {
+	if opts.VerLog == nil {
+		return fmt.Errorf("VerLog cannot be nil")
 	}
 
-	frames, err := ioutil.ReadDir(inputDir)
+	frames, err := ioutil.ReadDir(opts.InputDir)
 	if err != nil {
 		return fmt.Errorf("failed to read input images: %s", err)
 	}
 
-	const compWidth = 1200
-	const compHeight = 1800
-	const framesPerSheet = 3
-	var coverImgIndex int
-	var coverImgInfo os.FileInfo
+	// Trim the number of frames so we never end up with any empty spaces on the pages
+	nCols := opts.Cols
+	nRows := opts.Rows
+	framesPerPage := nCols * nRows
+	frames = frames[:framesPerPage*(len(frames)/framesPerPage)]
 
-	if !skipCover {
+	var coverImgIndex int
+	if opts.Cover {
 		coverFrame := frames[0]
-		coverFramePath := path.Join(inputDir, coverFrame.Name())
-		coverImg, err := renderFrontCover(coverFramePath, line1Text, line2Text, fontBytes)
+		coverFramePath := path.Join(opts.InputDir, coverFrame.Name())
+		coverImg, err := renderFrontCover(coverFramePath, opts.Line1Text, opts.Line2Text, opts.FontBytes)
 		if err != nil {
 			return fmt.Errorf("failed to generate cover image: %s", err)
 		}
 
-		coverImgOutPath := path.Join(outputDir, "cover.png")
+		coverImgOutPath := path.Join(opts.OutputDir, "cover.png")
 		err = imaging.Save(coverImg, coverImgOutPath)
 		if err != nil {
 			return fmt.Errorf("failed to save cover image: %s", err)
 		}
 
-		coverImgInfo, err = os.Stat(coverImgOutPath)
+		coverImgInfo, err := os.Stat(coverImgOutPath)
 		if err != nil {
 			return fmt.Errorf("failed to stat cover image: %s", err)
 		}
-	}
 
-	// Don't want to waste any paper, so we have some multiple of framesPerSheet so that
-	// all sheets are completely full, at most we lose two end frames
-	frames = frames[:framesPerSheet*(len(frames)/framesPerSheet)]
-	nFrames := len(frames)
-	nOutput := nFrames / framesPerSheet
-	var compImg *image.RGBA
-
-	if !skipCover {
-		if reverseFrames {
+		if opts.ReverseFrames {
 			coverImgIndex = len(frames) - 1
 		} else {
 			coverImgIndex = 0
@@ -94,85 +213,48 @@ func To4x6x3(bgColor, inputDir, outputDir, line1Text, line2Text, identifier stri
 		frames[coverImgIndex] = coverImgInfo
 	}
 
-	verLog.Println("reading input frames from:", inputDir)
-	verLog.Println(nFrames, " found for processing")
-	verLog.Println("composite images ", compWidth, "x", compHeight)
+	nFrames := len(frames)
+	nPages := nFrames / framesPerPage
 
-	smallImg := image.NewRGBA(image.Rectangle{
-		Min: image.Point{X: 0, Y: 0},
-		Max: image.Point{X: compWidth / 2, Y: compHeight / 2 / framesPerSheet},
-	})
+	opts.VerLog.Println("reading input frames from:", opts.InputDir)
+	opts.VerLog.Println(nFrames, "found for processing")
+	opts.VerLog.Println(nPages, "pages to be generated")
 
-	for i := 0; i < nOutput; i++ {
-		compImg = image.NewRGBA(image.Rectangle{
+	for pi := 0; pi < nPages; pi++ {
+		compWidth := int(opts.Page.Width * float32(opts.Page.DPI))
+		compHeight := int(opts.Page.Height * float32(opts.Page.DPI))
+		compImg := image.NewRGBA(image.Rectangle{
 			Min: image.Point{X: 0, Y: 0},
 			Max: image.Point{X: compWidth, Y: compHeight},
 		})
+		draw.Draw(compImg, compImg.Bounds(), image.White, image.ZP, draw.Src)
 
-		if bgColor == "white" {
-			draw.Draw(compImg, compImg.Bounds(), image.White, image.ZP, draw.Src)
-		} else {
-			draw.Draw(compImg, compImg.Bounds(), image.Black, image.ZP, draw.Src)
+		renderBounds := rect{
+			left:   int(opts.Page.MarginLeft * float32(opts.Page.DPI)),
+			top:    int(opts.Page.MarginTop * float32(opts.Page.DPI)),
+			width:  int((opts.Page.Width - (opts.Page.MarginLeft + opts.Page.MarginRight)) * float32(opts.Page.DPI)),
+			height: int((opts.Page.Height - (opts.Page.MarginTop + opts.Page.MarginBottom)) * float32(opts.Page.DPI)),
 		}
 
-		for j := 0; j < framesPerSheet; j++ {
-			frameIndex := i + j*nOutput
+		pageLayout := layout(pi, nPages, coverImgIndex, renderBounds, opts, frames)
 
-			if frameIndex >= nFrames {
-				break
-			}
-
-			// Flip the book from back to front vs front to back
-			if reverseFrames {
-				frameIndex = nFrames - frameIndex - 1
-			}
-
-			frame := frames[frameIndex]
-			framePath := path.Join(inputDir, frame.Name())
-
-			err := compFrame(framePath, j, compWidth, compHeight, framesPerSheet, compImg, verLog)
+		for fi := range pageLayout {
+			err := compFrame(compImg, pageLayout[fi], opts.VerLog)
 			if err != nil {
 				return err
 			}
-
-			// Don't want to put identifier info on the cover image
-			if frameIndex != coverImgIndex {
-				y := compHeight / framesPerSheet
-				addLabel(compImg, 20, y*j+int(float64(y)*0.5), strconv.Itoa(frameIndex))
-				if identifier != "" {
-					addLabel(compImg, 20, y*j+int(float64(y)*0.5)+20, identifier)
-				}
-			}
-
-			if smallFrames {
-				dstRect := image.Rectangle{
-					Min: image.Point{X: 0, Y: 0},
-					Max: image.Point{X: smallImg.Bounds().Dx(), Y: smallImg.Bounds().Dy()},
-				}
-				srcRect := image.Rectangle{
-					Min: image.Point{X: 0, Y: (compHeight / framesPerSheet) * j},
-					Max: image.Point{X: compImg.Bounds().Dx(), Y: (compHeight / framesPerSheet) * (j + 1)},
-				}
-				draw.BiLinear.Scale(smallImg, dstRect, compImg, srcRect, draw.Src, nil)
-
-				err = writeJPG(smallImg, outputDir, identifier+"-small", frameIndex, verLog)
-				if err != nil {
-					return err
-				}
-			}
-
 		}
 
 		// When you print pictures, maybe the service orders them by filename e.g. comp001, comp002 etc so the last
 		// frames are printed on the top of the stack so you have to reverse them for assembly, this flag flips the
 		// numbering so that you don't need to do this after printing
 		var compIndex int
-		if reversePages {
-			compIndex = nOutput - i - 1
+		if opts.ReversePages {
+			compIndex = nPages - pi - 1
 		} else {
-			compIndex = i
+			compIndex = pi
 		}
-		err = writeJPG(compImg, outputDir, identifier, compIndex, verLog)
+		err = writeJPG(compImg, opts.OutputDir, opts.Identifier, compIndex, opts.VerLog)
 		if err != nil {
 			return err
 		}
@@ -188,17 +270,6 @@ func renderFrontCover(framePath, labelLine1, labelLine2 string, fontBytes []byte
 	}
 
 	dst := imaging.Blur(src, 12.5)
-
-	drawBar := false
-	barWidth := 0
-	if drawBar {
-		barWidth = src.Bounds().Dx() / 7
-		draw.Draw(dst, image.Rectangle{
-			Min: image.Point{X: 0, Y: 0},
-			Max: image.Point{X: barWidth, Y: src.Bounds().Dy()},
-		}, image.Black, image.ZP, draw.Src)
-	}
-
 	c := freetype.NewContext()
 
 	f, err := freetype.ParseFont(fontBytes)
@@ -224,7 +295,7 @@ func renderFrontCover(framePath, labelLine1, labelLine2 string, fontBytes []byte
 	line1FontSize := 80.0
 	line2FontSize := 45.0
 	line2YOffset := 100
-	x := barWidth + 40
+	x := 140
 	y := 30
 
 	if err = renderText(x, y, line1FontSize, image.Black, labelLine1); err != nil {
@@ -242,42 +313,67 @@ func renderFrontCover(framePath, labelLine1, labelLine2 string, fontBytes []byte
 	return dst, nil
 }
 
-func compFrame(
-	inputImgPath string, compIndex, compWidth, compHeight, framesPerSheet int,
-	compImg *image.RGBA, verLog *log.Logger) error {
-	verLog.Println("reading:", inputImgPath)
+func compFrame(compImg *image.RGBA, f frame, verLog *log.Logger) error {
 
-	srcReader, err := os.Open(inputImgPath)
+	imgPath := path.Join(f.path, f.info.Name())
+	verLog.Println("reading:", imgPath)
+	srcReader, err := os.Open(imgPath)
 	if err != nil {
-		return fmt.Errorf("failed to read input image: %s, %s", inputImgPath, err)
+		return fmt.Errorf("failed to read input image: %s, %s", imgPath, err)
 	}
 
-	verLog.Println("decoding:", inputImgPath)
-
+	verLog.Println("decoding:", imgPath)
 	srcImg, err := png.Decode(srcReader)
 	srcReader.Close()
 	if err != nil {
-		return fmt.Errorf("failed to decode image on load: %s, %s", inputImgPath, err)
+		return fmt.Errorf("failed to decode image on load: %s, %s", imgPath, err)
 	}
 
 	verLog.Println("bounds:", srcImg.Bounds())
 
 	sourceWidth := srcImg.Bounds().Dx()
 	sourceHeight := srcImg.Bounds().Dy()
-	targetHeight := compHeight / framesPerSheet
 
-	minY := compIndex * targetHeight
-	maxX := int(float64(targetHeight) / float64(sourceHeight) * float64(sourceWidth))
-	xOffset := compWidth - maxX
+	// Render the image scaled to the dimensions we want
+	targetHeight := f.bounds.height
+	scaledWidth := int(float64(targetHeight) / float64(sourceHeight) * float64(sourceWidth))
+	scaledImg := image.NewRGBA(image.Rectangle{
+		Min: image.Point{X: 0, Y: 0},
+		Max: image.Point{X: scaledWidth, Y: targetHeight},
+	})
+	draw.BiLinear.Scale(scaledImg, scaledImg.Bounds(), srcImg, srcImg.Bounds(), draw.Src, nil)
 
+	// Composite into page container
+	left := int(math.Max(float64(f.bounds.left), float64(f.bounds.left+(f.bounds.width-scaledWidth))))
 	dstRect := image.Rectangle{
-		Min: image.Point{X: xOffset, Y: minY},
-		Max: image.Point{X: xOffset + maxX, Y: minY + int(targetHeight)},
+		Min: image.Point{X: left, Y: f.bounds.top},
+		Max: image.Point{X: f.bounds.left + f.bounds.width, Y: f.bounds.top + f.bounds.height},
+	}
+	draw.Draw(
+		compImg,
+		dstRect,
+		scaledImg,
+		image.Point{
+			X: int(math.Max(0, float64(scaledImg.Bounds().Dx()-f.bounds.width))),
+			Y: 0,
+		},
+		draw.Src)
+
+	// Draw the left size bar
+	barWidth := int(math.Max(100.0, float64(left-f.bounds.left)))
+	draw.Draw(compImg, image.Rectangle{
+		Min: image.Point{X: f.bounds.left, Y: f.bounds.top},
+		Max: image.Point{X: f.bounds.left + barWidth, Y: f.bounds.top + f.bounds.height},
+	}, image.Black, image.ZP, draw.Src)
+
+	if !f.isFrontCover {
+		x := f.bounds.left + 20
+		y := f.bounds.top + int(float32(f.bounds.height)*0.5)
+		yOffset := 20
+		addDebugLabel(compImg, x, y, strconv.Itoa(f.index))
+		addDebugLabel(compImg, x, y+yOffset, f.label)
 	}
 
-	verLog.Println("target rectangle:", dstRect)
-
-	draw.BiLinear.Scale(compImg, dstRect, srcImg, srcImg.Bounds(), draw.Src, nil)
 	return nil
 }
 
@@ -300,7 +396,7 @@ func writeJPG(compImg *image.RGBA, outputDir, identifier string, imgIndex int, v
 	return nil
 }
 
-func addLabel(img *image.RGBA, x, y int, label string) {
+func addDebugLabel(img *image.RGBA, x, y int, label string) {
 	col := color.RGBA{200, 100, 0, 255}
 	point := fixed.Point26_6{fixed.Int26_6(x * 64), fixed.Int26_6(y * 64)}
 
@@ -312,3 +408,64 @@ func addLabel(img *image.RGBA, x, y int, label string) {
 	}
 	d.DrawString(label)
 }
+
+/*
+	var coverImgIndex int
+	var coverImgInfo os.FileInfo
+
+	if !skipCover {
+		coverFrame := frames[0]
+		coverFramePath := path.Join(inputDir, coverFrame.Name())
+		coverImg, err := renderFrontCover(coverFramePath, line1Text, line2Text, fontBytes)
+		if err != nil {
+			return fmt.Errorf("failed to generate cover image: %s", err)
+		}
+
+		coverImgOutPath := path.Join(outputDir, "cover.png")
+		err = imaging.Save(coverImg, coverImgOutPath)
+		if err != nil {
+			return fmt.Errorf("failed to save cover image: %s", err)
+		}
+
+		coverImgInfo, err = os.Stat(coverImgOutPath)
+		if err != nil {
+			return fmt.Errorf("failed to stat cover image: %s", err)
+		}
+	}
+
+
+
+	if !skipCover {
+		if reverseFrames {
+			coverImgIndex = len(frames) - 1
+		} else {
+			coverImgIndex = 0
+		}
+		frames[coverImgIndex] = coverImgInfo
+	}
+
+
+	smallImg := image.NewRGBA(image.Rectangle{
+		Min: image.Point{X: 0, Y: 0},
+		Max: image.Point{X: compWidth / 2, Y: compHeight / 2 / framesPerSheet},
+	})
+
+
+			if smallFrames {
+				dstRect := image.Rectangle{
+					Min: image.Point{X: 0, Y: 0},
+					Max: image.Point{X: smallImg.Bounds().Dx(), Y: smallImg.Bounds().Dy()},
+				}
+				srcRect := image.Rectangle{
+					Min: image.Point{X: 0, Y: (compHeight / framesPerSheet) * j},
+					Max: image.Point{X: compImg.Bounds().Dx(), Y: (compHeight / framesPerSheet) * (j + 1)},
+				}
+				draw.BiLinear.Scale(smallImg, dstRect, compImg, srcRect, draw.Src, nil)
+
+				err = writeJPG(smallImg, outputDir, identifier+"-small", frameIndex, verLog)
+				if err != nil {
+					return err
+				}
+			}
+
+*/
