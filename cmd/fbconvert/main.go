@@ -3,10 +3,13 @@ package main
 import (
 	"encoding/base64"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 
 	"github.com/markdaws/go-flipbook/pkg/composite"
 	"github.com/markdaws/go-flipbook/pkg/ffmpeg"
@@ -35,6 +38,7 @@ func main() {
 	cover := flag.Bool("cover", false, "If true, a cover page is added to the rendered frames")
 	startTime := flag.Int("starttime", 0, "The start time in the input video to use as the start of the flip book")
 	layout := flag.String("layout", "4x6x3", "Determines how the flip book pages should be laid out. Values are 4x6x3, which gives 3 frames per 6x4 photo size, each 4x2, the other option is letter which is 12 frames laid out on a 8.5x11, each frame is 4.25x2. You can also specify letter-business which prints business size cards 3.5x2 on a letter paper, 10 cards per sheet")
+	margins := flag.String("margins", "", "Allows the caller to specify margins around the images. You may need to change the default values for your printer, if it does something like automatically expand the image to make it fill the full page. The format should be top,right,bottom,left")
 	maxLength := flag.Int("maxlength", 5, "The maximum length of the input video to process in seconds")
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
 	reversePages := flag.Bool("reversepages", false, "If true, the lowest numbered output page will contain the last frames. Useful if you print and don't want to have to manually reverse the printed stack for assembly, so you end up with page 1 on top")
@@ -169,13 +173,25 @@ func main() {
 	var err error
 	switch *layout {
 	case "4x6x3":
+		top := float32(0.0)
+		right := float32(0.0)
+		bottom := float32(0.0)
+		left := float32(0.0)
+		if *margins != "" {
+			top, right, bottom, left, err = parseMargins(*margins)
+			if err != nil {
+				errLog.Println("invalid margins option")
+				flag.PrintDefaults()
+				os.Exit(1)
+			}
+		}
 		page := composite.Page{
 			Width:        4,
 			Height:       6,
-			MarginTop:    1 / 16.0,
-			MarginRight:  1.5 / 16,
-			MarginBottom: 1.5 / 16,
-			MarginLeft:   1.5 / 16,
+			MarginTop:    top,
+			MarginRight:  right,
+			MarginBottom: bottom,
+			MarginLeft:   left,
 			DPI:          300,
 		}
 
@@ -196,13 +212,26 @@ func main() {
 		})
 
 	case "letter":
+		top := float32(0.0)
+		right := float32(0.0)
+		bottom := float32(1.0)
+		left := float32(0.0)
+		if *margins != "" {
+			top, right, bottom, left, err = parseMargins(*margins)
+			if err != nil {
+				errLog.Println("invalid margins option")
+				flag.PrintDefaults()
+				os.Exit(1)
+			}
+		}
+
 		page := composite.Page{
 			Width:        8.5,
 			Height:       11,
-			MarginTop:    0,
-			MarginRight:  0,
-			MarginBottom: 1,
-			MarginLeft:   0,
+			MarginTop:    top,
+			MarginRight:  right,
+			MarginBottom: bottom,
+			MarginLeft:   left,
 			DPI:          300,
 		}
 		err = composite.ToLetter(composite.Options{
@@ -222,13 +251,25 @@ func main() {
 		})
 
 	case "letter-business":
+		top := float32(0.5)
+		right := float32(0.5)
+		bottom := float32(0.5)
+		left := float32(0.5)
+		if *margins != "" {
+			top, right, bottom, left, err = parseMargins(*margins)
+			if err != nil {
+				errLog.Println("invalid margins option")
+				flag.PrintDefaults()
+				os.Exit(1)
+			}
+		}
 		page := composite.Page{
 			Width:        8.5,
 			Height:       11,
-			MarginTop:    0.5,
-			MarginRight:  0.5,
-			MarginBottom: 0.5,
-			MarginLeft:   0.5,
+			MarginTop:    top,
+			MarginRight:  right,
+			MarginBottom: bottom,
+			MarginLeft:   left,
 			DPI:          300,
 		}
 		err = composite.ToLetter(composite.Options{
@@ -270,4 +311,30 @@ func main() {
 	}
 
 	infoLog.Println("All done")
+}
+
+func parseMargins(margins string) (float32, float32, float32, float32, error) {
+	parts := strings.Split(margins, ",")
+	if len(parts) != 4 {
+		return 0, 0, 0, 0, fmt.Errorf("invalid margin: %s, must be in the format top,right,bottom,left", margins)
+	}
+
+	top, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid top margin value: %s", parts[0])
+	}
+	right, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid right margin value: %s", parts[1])
+	}
+	bottom, err := strconv.ParseFloat(parts[2], 64)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid bottom margin value: %s", parts[2])
+	}
+	left, err := strconv.ParseFloat(parts[3], 64)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid left margin value: %s", parts[3])
+	}
+
+	return float32(top), float32(right), float32(bottom), float32(left), nil
 }
