@@ -20,6 +20,7 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/golang/freetype"
+	"github.com/markdaws/go-effects/pkg/effects"
 )
 
 // Page defines all of the parameters of a single page, that can hold one
@@ -93,6 +94,9 @@ type Options struct {
 
 	// SmallFrames if true half size versions of each frame are created in the output dir
 	SmallFrames bool
+
+	// Effect is the name of an image processing effect to apply to each frame, values are 'oil'
+	Effect string
 
 	// VerLog a logger that will receive verbose information
 	VerLog *log.Logger
@@ -260,6 +264,32 @@ func renderPages(opts Options, layout layoutFunc) error {
 		frames[coverImgIndex] = coverImgInfo
 	}
 
+	//TODO: More efficient - should resize input frames first before applying
+	//an effect
+	if opts.Effect != "" {
+		for _, f := range frames {
+			switch opts.Effect {
+			case "oil":
+				p := path.Join(opts.InputDir, f.Name())
+				opts.VerLog.Println("Applying oil effect to:", p)
+				img, err := effects.LoadImage(p)
+				if err != nil {
+					return fmt.Errorf("failed to load frame: %s, %s", p, err)
+				}
+				oilImg, err := effects.OilPainting(img, 5, 30, true)
+				if err != nil {
+					return fmt.Errorf("failed to apply oil effect: %s, %s", p, err)
+				}
+				err = oilImg.SaveAsPNG(p)
+				if err != nil {
+					return fmt.Errorf("failed to save image with effect: %s, %s", p, err)
+				}
+			default:
+				return fmt.Errorf("invalid effect option: %s", opts.Effect)
+			}
+		}
+	}
+
 	nFrames := len(frames)
 	nPages := nFrames / framesPerPage
 
@@ -410,7 +440,7 @@ func compFrame(compImg *image.RGBA, f frame, labelLine1, labelLine2 string, font
 		draw.Src)
 
 	// Draw the left size bar
-	barWidth := int(math.Max(100.0, float64(left-f.bounds.left)))
+	barWidth := 100 //int(math.Max(100.0, float64(left-f.bounds.left)))
 	draw.Draw(compImg, image.Rectangle{
 		Min: image.Point{X: f.bounds.left, Y: f.bounds.top},
 		Max: image.Point{X: f.bounds.left + barWidth, Y: f.bounds.top + f.bounds.height},

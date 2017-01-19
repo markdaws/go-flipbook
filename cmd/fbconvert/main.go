@@ -26,7 +26,8 @@ func main() {
 	line1Text := flag.String("line1text", "", "Text to display on line 1 of the flipbook cover")
 	line2Text := flag.String("line2text", "", "Text to display on line 2 of the flipbook cover")
 	titleEncoded := flag.Bool("titleencoded", false, "If true, the line1text and line2text are expected to be base64 encoded strings, useful for untrusted input")
-	fps := flag.Int("fps", 15, "The number of frames to generate per second of video. Min 10, max 60")
+	effect := flag.String("effect", "", "An image processing effect to apply to each frame. Values can be 'oil'")
+	fps := flag.Int("fps", 15, "The number of frames to generate per second of video. Min 1, max 60")
 	clean := flag.Bool("clean", false, "If true, all files in the output directory are deleted before generating new items")
 	cleanFrames := flag.Bool("cleanframes", false, "If true, deletes all of the individual video frames after compositing")
 	bgColor := flag.String("bgcolor", "white", "The background color of the image (for border). Can be white|black")
@@ -95,8 +96,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *fps < 10 || *fps > 60 {
-		errLog.Println("--fps must be a value between 10 and 60")
+	if *fps < 1 || *fps > 60 {
+		errLog.Println("--fps must be a value between 1 and 60")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -157,16 +158,24 @@ func main() {
 		line2 = string(b)
 	}
 
+	switch *effect {
+	case "oil", "":
+	default:
+		errLog.Println("invalid effect option:", *effect)
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
 	var err error
 	switch *layout {
 	case "4x6x3":
 		page := composite.Page{
 			Width:        4,
 			Height:       6,
-			MarginTop:    0,
-			MarginRight:  0,
-			MarginBottom: 0,
-			MarginLeft:   0,
+			MarginTop:    1 / 16.0,
+			MarginRight:  1.5 / 16,
+			MarginBottom: 1.5 / 16,
+			MarginLeft:   1.5 / 16,
 			DPI:          300,
 		}
 
@@ -182,6 +191,7 @@ func main() {
 			ReversePages:  *reversePages,
 			ReverseFrames: *reverseFrames,
 			Cover:         *cover,
+			Effect:        *effect,
 			VerLog:        verLog,
 		})
 
@@ -207,6 +217,7 @@ func main() {
 			ReversePages:  *reversePages,
 			ReverseFrames: *reverseFrames,
 			Cover:         *cover,
+			Effect:        *effect,
 			VerLog:        verLog,
 		})
 
