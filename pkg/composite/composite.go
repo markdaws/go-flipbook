@@ -3,7 +3,7 @@ package composite
 import (
 	"fmt"
 	"image"
-	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io/ioutil"
@@ -18,6 +18,7 @@ import (
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
 
+	"github.com/andybons/gogif"
 	"github.com/disintegration/imaging"
 	"github.com/golang/freetype"
 	"github.com/markdaws/go-effects/pkg/effects"
@@ -91,6 +92,9 @@ type Options struct {
 
 	// Cover if true a cover image is rendered
 	Cover bool
+
+	// GIF if true an animated GIF is generated from the individual frames
+	GIF bool
 
 	// SmallFrames if true half size versions of each frame are created in the output dir
 	SmallFrames bool
@@ -268,26 +272,63 @@ func renderPages(opts Options, layout layoutFunc) error {
 	//an effect
 	if opts.Effect != "" {
 		for _, f := range frames {
+			p := path.Join(opts.InputDir, f.Name())
+			var outImg *effects.Image
+
+			img, err := effects.LoadImage(p)
+			if err != nil {
+				return fmt.Errorf("failed to load frame: %s, %s", p, err)
+			}
+
 			switch opts.Effect {
 			case "oil":
-				p := path.Join(opts.InputDir, f.Name())
 				opts.VerLog.Println("Applying oil effect to:", p)
-				img, err := effects.LoadImage(p)
-				if err != nil {
-					return fmt.Errorf("failed to load frame: %s, %s", p, err)
-				}
-				oilImg, err := effects.OilPainting(img, 5, 30, true)
+				outImg, err = effects.OilPainting(img, 0, 5, 30)
 				if err != nil {
 					return fmt.Errorf("failed to apply oil effect: %s, %s", p, err)
 				}
-				err = oilImg.SaveAsPNG(p)
+			case "pixelate":
+				opts.VerLog.Println("Applying pixelate effect to:", p)
+				outImg, err = effects.Pixelate(img, 0, 20)
 				if err != nil {
-					return fmt.Errorf("failed to save image with effect: %s, %s", p, err)
+					return fmt.Errorf("failed to apply pixelate effect: %s, %s", p, err)
+				}
+			case "pencil":
+				opts.VerLog.Println("Applying pencil effect to:", p)
+				outImg, err = effects.Pencil(img, 0, 5)
+				if err != nil {
+					return fmt.Errorf("failed to apply pencil effect: %s, %s", p, err)
+				}
+			case "edge":
+				opts.VerLog.Println("Applying edge effect to:", p)
+				outImg, err = effects.Sobel(img, 0, -1, false)
+				if err != nil {
+					return fmt.Errorf("failed to apply edge effect: %s, %s", p, err)
+				}
+			case "cartoon":
+				opts.VerLog.Println("Applying cartoon effect to:", p)
+				outImg, err = effects.Cartoon(img, 0, effects.CTOpts{
+					BlurKernelSize: 5,
+					EdgeThreshold:  50,
+					OilFilterSize:  8,
+					OilLevels:      20,
+				})
+				if err != nil {
+					return fmt.Errorf("failed to apply cartoon effect: %s, %s", p, err)
 				}
 			default:
 				return fmt.Errorf("invalid effect option: %s", opts.Effect)
 			}
+
+			err = outImg.Save(p, effects.SaveOpts{ClipToBounds: true})
+			if err != nil {
+				return fmt.Errorf("failed to save image with effect: %s, %s", p, err)
+			}
 		}
+	}
+
+	if opts.GIF {
+		renderGIF(frames, opts.InputDir, opts.OutputDir)
 	}
 
 	nFrames := len(frames)
@@ -375,21 +416,27 @@ func annotateFrontCover(img *image.RGBA, dstRect image.Rectangle, labelLine1, la
 	line1FontSize := 80.0
 	line2FontSize := 45.0
 	line2YOffset := 100
-	x := dstRect.Min.X + 80
+	x := dstRect.Min.X + 100
 	y := dstRect.Min.Y + 30
 
 	if err = renderText(x, y, line1FontSize, image.Black, labelLine1); err != nil {
 		return err
 	}
+	if err = renderText(x-4, y-4, line1FontSize, image.Black, labelLine1); err != nil {
+		return err
+	}
+
 	if err = renderText(x-2, y-2, line1FontSize, image.White, labelLine1); err != nil {
 		return err
 	}
+
 	if err = renderText(x, y+line2YOffset, line2FontSize, image.Black, labelLine2); err != nil {
 		return err
 	}
 	if err = renderText(x-2, y-2+line2YOffset, line2FontSize, image.White, labelLine2); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -455,7 +502,11 @@ func compFrame(compImg *image.RGBA, f frame, labelLine1, labelLine2 string, font
 	}
 
 	if f.isFrontCover {
-		err := annotateFrontCover(compImg, dstRect, labelLine1, labelLine2, fontBytes)
+		dr := image.Rectangle{
+			Min: image.Point{X: f.bounds.left + barWidth, Y: f.bounds.top},
+			Max: image.Point{X: f.bounds.left + f.bounds.width, Y: f.bounds.top + f.bounds.height},
+		}
+		err := annotateFrontCover(compImg, dr, labelLine1, labelLine2, fontBytes)
 		if err != nil {
 			return err
 		}
@@ -484,14 +535,51 @@ func writeJPG(compImg *image.RGBA, outputDir, identifier string, imgIndex int, v
 }
 
 func addDebugLabel(img *image.RGBA, x, y int, label string) {
-	col := color.RGBA{200, 100, 0, 255}
 	point := fixed.Point26_6{fixed.Int26_6(x * 64), fixed.Int26_6(y * 64)}
 
 	d := &font.Drawer{
 		Dst:  img,
-		Src:  image.NewUniform(col),
+		Src:  image.White,
 		Face: basicfont.Face7x13,
 		Dot:  point,
 	}
 	d.DrawString(label)
+}
+
+func renderGIF(frames []os.FileInfo, inputDir, outputPath string) error {
+	outGif := &gif.GIF{}
+	for _, f := range frames {
+
+		imgPath := path.Join(inputDir, f.Name())
+		srcReader, err := os.Open(imgPath)
+		if err != nil {
+			panic("cant open")
+			return fmt.Errorf("failed to read input image: %s, %s", imgPath, err)
+		}
+
+		srcImg, err := png.Decode(srcReader)
+		srcReader.Close()
+		if err != nil {
+			panic("cant decode")
+			return fmt.Errorf("failed to decode image on load: %s, %s", imgPath, err)
+		}
+
+		fmt.Println("generate palette:", f.Name())
+		pm := image.NewPaletted(srcImg.Bounds(), nil)
+		q := &gogif.MedianCutQuantizer{NumColor: 256}
+		q.Quantize(pm, srcImg.Bounds(), srcImg, image.ZP)
+		//f, _ := os.Open(name)
+		//inGif, _ := gif.Decode(f)
+		//f.Close()
+
+		outGif.Image = append(outGif.Image, pm)
+		outGif.Delay = append(outGif.Delay, 0)
+	}
+
+	fmt.Println("writing gif to", outputPath)
+	ff, _ := os.OpenFile(path.Join(outputPath, "out.gif"), os.O_WRONLY|os.O_CREATE, 0600)
+	defer ff.Close()
+	gif.EncodeAll(ff, outGif)
+
+	return nil
 }

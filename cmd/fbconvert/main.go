@@ -29,7 +29,7 @@ func main() {
 	line1Text := flag.String("line1text", "", "Text to display on line 1 of the flipbook cover")
 	line2Text := flag.String("line2text", "", "Text to display on line 2 of the flipbook cover")
 	titleEncoded := flag.Bool("titleencoded", false, "If true, the line1text and line2text are expected to be base64 encoded strings, useful for untrusted input")
-	effect := flag.String("effect", "", "An image processing effect to apply to each frame. Values can be 'oil'")
+	effect := flag.String("effect", "", "An image processing effect to apply to each frame. Values can be 'oil|pixelate|edge|cartoon|pencil'")
 	fps := flag.Int("fps", 15, "The number of frames to generate per second of video. Min 1, max 60")
 	clean := flag.Bool("clean", false, "If true, all files in the output directory are deleted before generating new items")
 	cleanFrames := flag.Bool("cleanframes", false, "If true, deletes all of the individual video frames after compositing")
@@ -43,10 +43,15 @@ func main() {
 	identifier := flag.String("identifier", "", "A string that will be printed on each frame, for easy identification")
 	reversePages := flag.Bool("reversepages", false, "If true, the lowest numbered output page will contain the last frames. Useful if you print and don't want to have to manually reverse the printed stack for assembly, so you end up with page 1 on top")
 	reverseFrames := flag.Bool("reverseframes", false, "If true, frame 0 will be printed last, in this case you flip from the end of the book to the front to view the scene, which I have found is easier than flipping front to back")
+	//gif := flag.Bool("gif", false, "If true, an animated GIF will be created from the individual frames")
 	ver := flag.Bool("version", false, "Displays the app version number")
 	verbose := flag.Bool("verbose", false, "Prints verbose output as the process is running")
 
 	flag.Parse()
+
+	//TODO: re-enable
+	noGIF := false
+	gif := &noGIF
 
 	infoLog := log.New(os.Stdout, "INFO: ", 0)
 	errLog := log.New(os.Stderr, "ERR: ", 0)
@@ -163,11 +168,27 @@ func main() {
 	}
 
 	switch *effect {
-	case "oil", "":
+	case "oil", "pixelate", "cartoon", "edge", "pencil", "":
 	default:
 		errLog.Println("invalid effect option:", *effect)
 		flag.PrintDefaults()
 		os.Exit(1)
+	}
+
+	compOpts := composite.Options{
+		GIF:           *gif,
+		BGColor:       bgColorComp,
+		OutputDir:     *output,
+		InputDir:      *output,
+		Line1Text:     line1,
+		Line2Text:     line2,
+		Identifier:    *identifier,
+		FontBytes:     fontBytes,
+		ReversePages:  *reversePages,
+		ReverseFrames: *reverseFrames,
+		Cover:         *cover,
+		Effect:        *effect,
+		VerLog:        verLog,
 	}
 
 	var err error
@@ -194,22 +215,8 @@ func main() {
 			MarginLeft:   left,
 			DPI:          300,
 		}
-
-		err = composite.To4x6x3(composite.Options{
-			Page:          page,
-			BGColor:       bgColorComp,
-			OutputDir:     *output,
-			InputDir:      *output,
-			Line1Text:     line1,
-			Line2Text:     line2,
-			Identifier:    *identifier,
-			FontBytes:     fontBytes,
-			ReversePages:  *reversePages,
-			ReverseFrames: *reverseFrames,
-			Cover:         *cover,
-			Effect:        *effect,
-			VerLog:        verLog,
-		})
+		compOpts.Page = page
+		err = composite.To4x6x3(compOpts)
 
 	case "letter":
 		top := float32(0.0)
@@ -234,21 +241,8 @@ func main() {
 			MarginLeft:   left,
 			DPI:          300,
 		}
-		err = composite.ToLetter(composite.Options{
-			Page:          page,
-			BGColor:       bgColorComp,
-			OutputDir:     *output,
-			InputDir:      *output,
-			Line1Text:     line1,
-			Line2Text:     line2,
-			Identifier:    *identifier,
-			FontBytes:     fontBytes,
-			ReversePages:  *reversePages,
-			ReverseFrames: *reverseFrames,
-			Cover:         *cover,
-			Effect:        *effect,
-			VerLog:        verLog,
-		})
+		compOpts.Page = page
+		err = composite.ToLetter(compOpts)
 
 	case "letter-business":
 		top := float32(0.5)
@@ -272,20 +266,8 @@ func main() {
 			MarginLeft:   left,
 			DPI:          300,
 		}
-		err = composite.ToLetter(composite.Options{
-			Page:          page,
-			BGColor:       bgColorComp,
-			OutputDir:     *output,
-			InputDir:      *output,
-			Line1Text:     line1,
-			Line2Text:     line2,
-			Identifier:    *identifier,
-			FontBytes:     fontBytes,
-			ReversePages:  *reversePages,
-			ReverseFrames: *reverseFrames,
-			Cover:         *cover,
-			VerLog:        verLog,
-		})
+		compOpts.Page = page
+		err = composite.ToLetter(compOpts)
 
 	default:
 		errLog.Println("invalid layout value:", *layout)
