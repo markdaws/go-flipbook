@@ -3,7 +3,6 @@ package composite
 import (
 	"fmt"
 	"image"
-	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io/ioutil"
@@ -18,7 +17,6 @@ import (
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
 
-	"github.com/andybons/gogif"
 	"github.com/disintegration/imaging"
 	"github.com/golang/freetype"
 	"github.com/markdaws/go-effects/pkg/effects"
@@ -181,6 +179,7 @@ func To4x6x3(opts Options) error {
 	return renderPages(opts, layoutPage)
 }
 
+// ToLetter renders the frames on a letter page, 10 frames per page
 func ToLetter(opts Options) error {
 	opts.Rows = 5
 	opts.Cols = 2
@@ -327,9 +326,10 @@ func renderPages(opts Options, layout layoutFunc) error {
 		}
 	}
 
-	if opts.GIF {
-		renderGIF(frames, opts.InputDir, opts.OutputDir)
-	}
+	/*
+		if opts.GIF {
+			renderGIF(frames, opts.InputDir, opts.OutputDir)
+		}*/
 
 	nFrames := len(frames)
 	nPages := nFrames / framesPerPage
@@ -546,6 +546,7 @@ func addDebugLabel(img *image.RGBA, x, y int, label string) {
 	d.DrawString(label)
 }
 
+/*
 func renderGIF(frames []os.FileInfo, inputDir, outputPath string) error {
 	outGif := &gif.GIF{}
 	for _, f := range frames {
@@ -583,3 +584,4 @@ func renderGIF(frames []os.FileInfo, inputDir, outputPath string) error {
 
 	return nil
 }
+*/

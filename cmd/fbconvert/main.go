@@ -67,72 +67,12 @@ func main() {
 		return
 	}
 
-	switch *bgColor {
-	case "white", "black":
-	default:
-		errLog.Println("--bgcolor must be white|black, invalid option:", *bgColor)
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
+	validateFlags(*bgColor, *input, *output, *effect, *fps, *skipVideo, verLog, errLog)
 
-	var fontBytes []byte
-	if *fontPath != "" {
-		var err error
-		fontBytes, err = ioutil.ReadFile(*fontPath)
-		if err != nil {
-			errLog.Println("--fontpath cannot open font file:", *fontPath)
-			os.Exit(1)
-		}
-	} else {
-		var err error
-		// defined in auto generated bindata.go file
-		fontBytes, err = Asset("data/HelveticaNeue.ttf")
-		if err != nil {
-			errLog.Println("failed to read default font HelveticaNeue")
-			os.Exit(1)
-		}
-	}
-
-	if *input == "" && !*skipVideo {
-		errLog.Println("--input is a required option\n\n")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
-	if *output == "" {
-		errLog.Println("--output is a required option\n\n")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
-	if *fps < 1 || *fps > 60 {
-		errLog.Println("--fps must be a value between 1 and 60")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
+	fontBytes := loadFont(*fontPath, errLog)
 
 	if *clean {
-		verLog.Println("Cleaning:", *output)
-
-		if _, err := os.Stat(*output); os.IsNotExist(err) {
-			errLog.Printf("invalid output, the directory does not exist, please create it:  %s", *output)
-			os.Exit(1)
-		}
-
-		files, err := ioutil.ReadDir(*output)
-		if err != nil {
-			errLog.Println("Failed to clean files:", err)
-			os.Exit(1)
-		}
-		for _, file := range files {
-			filePath := path.Join(*output, file.Name())
-			err := os.Remove(filePath)
-			if err != nil {
-				errLog.Printf("Failed to delete %s: %s", filePath, err)
-				os.Exit(1)
-			}
-			verLog.Println("Deleted:", filePath)
-		}
+		cleanOutput(*output, verLog, errLog)
 	}
 
 	var frames []os.FileInfo
@@ -150,30 +90,7 @@ func main() {
 		bgColorComp = "white"
 	}
 
-	line1 := *line1Text
-	line2 := *line2Text
-	if *titleEncoded {
-		b, err := base64.StdEncoding.DecodeString(line1)
-		if err != nil {
-			errLog.Println("error decoding line1text:", err)
-			os.Exit(1)
-		}
-		line1 = string(b)
-		b, err = base64.StdEncoding.DecodeString(line2)
-		if err != nil {
-			errLog.Println("error decoding line2text:", err)
-			os.Exit(1)
-		}
-		line2 = string(b)
-	}
-
-	switch *effect {
-	case "oil", "pixelate", "cartoon", "edge", "pencil", "":
-	default:
-		errLog.Println("invalid effect option:", *effect)
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
+	line1, line2 := encodeTitles(*titleEncoded, *line1Text, *line2Text, errLog)
 
 	compOpts := composite.Options{
 		GIF:           *gif,
@@ -281,18 +198,100 @@ func main() {
 	}
 
 	if *cleanFrames {
-		verLog.Println("cleaning frames")
-		for _, f := range frames {
-			filePath := path.Join(*output, f.Name())
-			err := os.Remove(filePath)
-			if err != nil {
-				errLog.Printf("Failed to delete %s: %s", filePath, err)
-			}
-			verLog.Println("Deleted:", filePath)
-		}
+		cleanVideoFrames(*output, frames, verLog, errLog)
 	}
 
 	infoLog.Println("All done")
+}
+
+func cleanOutput(output string, verLog, errLog *log.Logger) {
+	verLog.Println("Cleaning:", output)
+
+	if _, err := os.Stat(output); os.IsNotExist(err) {
+		errLog.Printf("invalid output, the directory does not exist, please create it:  %s", output)
+		os.Exit(1)
+	}
+
+	files, err := ioutil.ReadDir(output)
+	if err != nil {
+		errLog.Println("Failed to clean files:", err)
+		os.Exit(1)
+	}
+	for _, file := range files {
+		filePath := path.Join(output, file.Name())
+		err := os.Remove(filePath)
+		if err != nil {
+			errLog.Printf("Failed to delete %s: %s", filePath, err)
+			os.Exit(1)
+		}
+		verLog.Println("Deleted:", filePath)
+	}
+}
+
+func encodeTitles(encode bool, line1, line2 string, errLog *log.Logger) (string, string) {
+	if encode {
+		b, err := base64.StdEncoding.DecodeString(line1)
+		if err != nil {
+			errLog.Println("error decoding line1text:", err)
+			os.Exit(1)
+		}
+		line1 = string(b)
+		b, err = base64.StdEncoding.DecodeString(line2)
+		if err != nil {
+			errLog.Println("error decoding line2text:", err)
+			os.Exit(1)
+		}
+		line2 = string(b)
+	}
+	return line1, line2
+}
+
+func validateFlags(bgColor, input, output, effect string, fps int, skipVideo bool, verLog, errLog *log.Logger) {
+	switch bgColor {
+	case "white", "black":
+	default:
+		errLog.Println("--bgcolor must be white|black, invalid option:", bgColor)
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if input == "" && !skipVideo {
+		errLog.Println("--input is a required option")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if output == "" {
+		errLog.Println("--output is a required option")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if fps < 1 || fps > 60 {
+		errLog.Println("--fps must be a value between 1 and 60")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	switch effect {
+	case "oil", "pixelate", "cartoon", "edge", "pencil", "":
+	default:
+		errLog.Println("invalid effect option:", effect)
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+}
+
+func cleanVideoFrames(output string, frames []os.FileInfo, verLog, errLog *log.Logger) {
+	verLog.Println("cleaning frames")
+	for _, f := range frames {
+		filePath := path.Join(output, f.Name())
+		err := os.Remove(filePath)
+		if err != nil {
+			errLog.Printf("Failed to delete %s: %s", filePath, err)
+		}
+		verLog.Println("Deleted:", filePath)
+	}
 }
 
 func parseMargins(margins string) (float32, float32, float32, float32, error) {
@@ -319,4 +318,25 @@ func parseMargins(margins string) (float32, float32, float32, float32, error) {
 	}
 
 	return float32(top), float32(right), float32(bottom), float32(left), nil
+}
+
+func loadFont(fontPath string, errLog *log.Logger) []byte {
+	var fontBytes []byte
+	if fontPath != "" {
+		var err error
+		fontBytes, err = ioutil.ReadFile(fontPath)
+		if err != nil {
+			errLog.Println("--fontpath cannot open font file:", fontPath)
+			os.Exit(1)
+		}
+	} else {
+		var err error
+		// defined in auto generated bindata.go file
+		fontBytes, err = Asset("data/HelveticaNeue.ttf")
+		if err != nil {
+			errLog.Println("failed to read default font HelveticaNeue")
+			os.Exit(1)
+		}
+	}
+	return fontBytes
 }
