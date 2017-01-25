@@ -1,3 +1,5 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/markdaws/go-flipbook)](https://goreportcard.com/report/github.com/markdaws/go-flipbook)
+
 # go-flipbook
 go based project that converts video to flipbook printable images - make your own flipbook
 
