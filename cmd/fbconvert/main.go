@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -109,6 +110,8 @@ func main() {
 	}
 
 	var err error
+	var info composite.RenderInfo
+
 	switch *layout {
 	case "4x6x3":
 		top := float32(0.0)
@@ -133,7 +136,7 @@ func main() {
 			DPI:          300,
 		}
 		compOpts.Page = page
-		err = composite.To4x6x3(compOpts)
+		info, err = composite.To4x6x3(compOpts)
 
 	case "letter":
 		top := float32(0.0)
@@ -159,7 +162,7 @@ func main() {
 			DPI:          300,
 		}
 		compOpts.Page = page
-		err = composite.ToLetter(compOpts)
+		info, err = composite.ToLetter(compOpts)
 
 	case "letter-business":
 		top := float32(0.5)
@@ -184,7 +187,7 @@ func main() {
 			DPI:          300,
 		}
 		compOpts.Page = page
-		err = composite.ToLetter(compOpts)
+		info, err = composite.ToLetter(compOpts)
 
 	default:
 		errLog.Println("invalid layout value:", *layout)
@@ -197,11 +200,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	err = writeInfo(path.Join(*output, "info.json"), info)
+	if err != nil {
+		errLog.Println("failed to write info.json:", err)
+		os.Exit(1)
+	}
+
 	if *cleanFrames {
 		cleanVideoFrames(*output, frames, verLog, errLog)
 	}
 
 	infoLog.Println("All done")
+}
+
+func writeInfo(path string, info composite.RenderInfo) error {
+	b, err := json.MarshalIndent(struct {
+		NFrames int     `json:"nFrames"`
+		FrameAR float64 `json:"frameAR"`
+	}{
+		NFrames: info.NFrames,
+		FrameAR: info.FrameAR,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(path, b, 0644)
+	return err
 }
 
 func cleanOutput(output string, verLog, errLog *log.Logger) {

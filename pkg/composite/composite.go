@@ -104,6 +104,15 @@ type Options struct {
 	VerLog *log.Logger
 }
 
+// RenderInfo contains metadata about the completed job
+type RenderInfo struct {
+	// NFrames the number of frames in the flip
+	NFrames int
+
+	// FrameAR the aspect ratio of the final frames
+	FrameAR float64
+}
+
 type rect struct {
 	top    int
 	left   int
@@ -142,7 +151,7 @@ type layoutFunc func(pageIndex, nPages, frontCoverIndex int, renderBounds rect, 
 // where 0,4,8 are printed on one page, 1,5,9 on another etc. This way you can simply
 // stack sheets a,b,c,d on top of one another, make two cuts and then put the stack together
 // to assemble your flip book.
-func To4x6x3(opts Options) error {
+func To4x6x3(opts Options) (RenderInfo, error) {
 	opts.Rows = 3
 	opts.Cols = 1
 
@@ -180,7 +189,7 @@ func To4x6x3(opts Options) error {
 }
 
 // ToLetter renders the frames on a letter page, 10 frames per page
-func ToLetter(opts Options) error {
+func ToLetter(opts Options) (RenderInfo, error) {
 	opts.Rows = 5
 	opts.Cols = 2
 
@@ -223,14 +232,14 @@ func ToLetter(opts Options) error {
 	return renderPages(opts, layoutPage)
 }
 
-func renderPages(opts Options, layout layoutFunc) error {
+func renderPages(opts Options, layout layoutFunc) (RenderInfo, error) {
 	if opts.VerLog == nil {
-		return fmt.Errorf("VerLog cannot be nil")
+		return RenderInfo{}, fmt.Errorf("VerLog cannot be nil")
 	}
 
 	frames, err := ioutil.ReadDir(opts.InputDir)
 	if err != nil {
-		return fmt.Errorf("failed to read input images: %s", err)
+		return RenderInfo{}, fmt.Errorf("failed to read input images: %s", err)
 	}
 
 	// Trim the number of frames so we never end up with any empty spaces on the pages
@@ -245,18 +254,18 @@ func renderPages(opts Options, layout layoutFunc) error {
 		coverFramePath := path.Join(opts.InputDir, coverFrame.Name())
 		coverImg, err := renderFrontCover(coverFramePath)
 		if err != nil {
-			return fmt.Errorf("failed to generate cover image: %s", err)
+			return RenderInfo{}, fmt.Errorf("failed to generate cover image: %s", err)
 		}
 
 		coverImgOutPath := path.Join(opts.OutputDir, "cover.png")
 		err = imaging.Save(coverImg, coverImgOutPath)
 		if err != nil {
-			return fmt.Errorf("failed to save cover image: %s", err)
+			return RenderInfo{}, fmt.Errorf("failed to save cover image: %s", err)
 		}
 
 		coverImgInfo, err := os.Stat(coverImgOutPath)
 		if err != nil {
-			return fmt.Errorf("failed to stat cover image: %s", err)
+			return RenderInfo{}, fmt.Errorf("failed to stat cover image: %s", err)
 		}
 
 		if opts.ReverseFrames {
@@ -276,7 +285,7 @@ func renderPages(opts Options, layout layoutFunc) error {
 
 			img, err := effects.LoadImage(p)
 			if err != nil {
-				return fmt.Errorf("failed to load frame: %s, %s", p, err)
+				return RenderInfo{}, fmt.Errorf("failed to load frame: %s, %s", p, err)
 			}
 
 			switch opts.Effect {
@@ -284,25 +293,25 @@ func renderPages(opts Options, layout layoutFunc) error {
 				opts.VerLog.Println("Applying oil effect to:", p)
 				outImg, err = effects.OilPainting(img, 0, 5, 30)
 				if err != nil {
-					return fmt.Errorf("failed to apply oil effect: %s, %s", p, err)
+					return RenderInfo{}, fmt.Errorf("failed to apply oil effect: %s, %s", p, err)
 				}
 			case "pixelate":
 				opts.VerLog.Println("Applying pixelate effect to:", p)
 				outImg, err = effects.Pixelate(img, 0, 20)
 				if err != nil {
-					return fmt.Errorf("failed to apply pixelate effect: %s, %s", p, err)
+					return RenderInfo{}, fmt.Errorf("failed to apply pixelate effect: %s, %s", p, err)
 				}
 			case "pencil":
 				opts.VerLog.Println("Applying pencil effect to:", p)
 				outImg, err = effects.Pencil(img, 0, 5)
 				if err != nil {
-					return fmt.Errorf("failed to apply pencil effect: %s, %s", p, err)
+					return RenderInfo{}, fmt.Errorf("failed to apply pencil effect: %s, %s", p, err)
 				}
 			case "edge":
 				opts.VerLog.Println("Applying edge effect to:", p)
 				outImg, err = effects.Sobel(img, 0, -1, false)
 				if err != nil {
-					return fmt.Errorf("failed to apply edge effect: %s, %s", p, err)
+					return RenderInfo{}, fmt.Errorf("failed to apply edge effect: %s, %s", p, err)
 				}
 			case "cartoon":
 				opts.VerLog.Println("Applying cartoon effect to:", p)
@@ -313,15 +322,15 @@ func renderPages(opts Options, layout layoutFunc) error {
 					OilLevels:      20,
 				})
 				if err != nil {
-					return fmt.Errorf("failed to apply cartoon effect: %s, %s", p, err)
+					return RenderInfo{}, fmt.Errorf("failed to apply cartoon effect: %s, %s", p, err)
 				}
 			default:
-				return fmt.Errorf("invalid effect option: %s", opts.Effect)
+				return RenderInfo{}, fmt.Errorf("invalid effect option: %s", opts.Effect)
 			}
 
 			err = outImg.Save(p, effects.SaveOpts{ClipToBounds: true})
 			if err != nil {
-				return fmt.Errorf("failed to save image with effect: %s, %s", p, err)
+				return RenderInfo{}, fmt.Errorf("failed to save image with effect: %s, %s", p, err)
 			}
 		}
 	}
@@ -338,13 +347,15 @@ func renderPages(opts Options, layout layoutFunc) error {
 	opts.VerLog.Println(nFrames, "found for processing")
 	opts.VerLog.Println(nPages, "pages to be generated")
 
+	compWidth := int(opts.Page.Width * float32(opts.Page.DPI))
+	compHeight := int(opts.Page.Height * float32(opts.Page.DPI))
+	compImg := image.NewRGBA(image.Rectangle{
+		Min: image.Point{X: 0, Y: 0},
+		Max: image.Point{X: compWidth, Y: compHeight},
+	})
+
+	frameAR := 0.0
 	for pi := 0; pi < nPages; pi++ {
-		compWidth := int(opts.Page.Width * float32(opts.Page.DPI))
-		compHeight := int(opts.Page.Height * float32(opts.Page.DPI))
-		compImg := image.NewRGBA(image.Rectangle{
-			Min: image.Point{X: 0, Y: 0},
-			Max: image.Point{X: compWidth, Y: compHeight},
-		})
 		draw.Draw(compImg, compImg.Bounds(), image.White, image.ZP, draw.Src)
 
 		renderBounds := rect{
@@ -356,10 +367,14 @@ func renderPages(opts Options, layout layoutFunc) error {
 
 		pageLayout := layout(pi, nPages, coverImgIndex, renderBounds, opts, frames)
 
+		if frameAR == 0.0 {
+			frameAR = float64(pageLayout[0].bounds.width) / float64(pageLayout[0].bounds.height)
+		}
+
 		for fi := range pageLayout {
 			err := compFrame(compImg, pageLayout[fi], opts.Line1Text, opts.Line2Text, opts.FontBytes, opts.VerLog)
 			if err != nil {
-				return err
+				return RenderInfo{}, err
 			}
 		}
 
@@ -374,11 +389,14 @@ func renderPages(opts Options, layout layoutFunc) error {
 		}
 		err = writeJPG(compImg, opts.OutputDir, opts.Identifier, compIndex, opts.VerLog)
 		if err != nil {
-			return err
+			return RenderInfo{}, err
 		}
 	}
 
-	return nil
+	return RenderInfo{
+		NFrames: nFrames,
+		FrameAR: frameAR,
+	}, nil
 }
 
 func renderFrontCover(framePath string) (image.Image, error) {
