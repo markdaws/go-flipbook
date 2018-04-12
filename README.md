@@ -3,7 +3,7 @@
 # go-flipbook
 go based project that converts video to flipbook printable images - make your own flipbook
 
-##Overview
+## Overview
 This project takes input videos and renders frames from the video to images that can be used to make flip books. For example, given this input video: [night sky](test/sky.mp4) in the example we extract frames at 15fps, then composite the frames into a final set of images suitable for printing on a 6x4 piece of photo paper. Examples are:
 
 ![](test/output/comp-nightsky-000.jpg)
